@@ -3,7 +3,7 @@
 #define RERABBITQC_PRAGZIP_H
 
 
-#include "Globals.h"
+#include "src/Globals.h"
 
 
 int main_pragzip(int argc, char *argv[], moodycamel::ReaderWriterQueue<std::pair<char *, int>>*Q, std::atomic_int *producerDone);

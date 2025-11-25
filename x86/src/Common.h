@@ -16,7 +16,7 @@
 #ifndef H_COMMON
 #define H_COMMON
 
-#include "Globals.h"
+#include "src/Globals.h"
 
 #ifndef NDEBUG
 #define DEBUG 1

@@ -36,6 +36,7 @@ target_include_directories(host_objects PRIVATE
     ${CMAKE_SOURCE_DIR}/common/include
     ${CMAKE_SOURCE_DIR}/common/lib
 )
+target_compile_definitions(host_objects PRIVATE PLATFORM_SUNWAY)
 
 # Host C objects
 add_library(host_c_objects OBJECT ${SRC_C_SOURCES})
@@ -65,6 +66,7 @@ target_include_directories(slave_objects PRIVATE
     ${CMAKE_SOURCE_DIR}/common/include
     ${CMAKE_SOURCE_DIR}/common/lib
 )
+target_compile_definitions(slave_objects PRIVATE PLATFORM_SUNWAY)
 
 # Slave C objects
 add_library(slave_c_objects OBJECT ${SLAVE_C_SOURCES})
@@ -88,6 +90,14 @@ add_executable(rabbitqc-x
 # Set target name and platform macro
 set_target_properties(rabbitqc-x PROPERTIES OUTPUT_NAME "rabbitqc-x")
 target_compile_definitions(rabbitqc-x PRIVATE PLATFORM_SUNWAY)
+target_include_directories(rabbitqc-x PRIVATE
+    ${CMAKE_SOURCE_DIR}  # Add project root for src/Globals.h, src/cmdinfo.h, etc.
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/common
+    ${CMAKE_SOURCE_DIR}/common/include
+    ${CMAKE_SOURCE_DIR}/common/lib
+)
 
 # Link flags for hybrid mode
 target_link_options(rabbitqc-x PRIVATE

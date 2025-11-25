@@ -9,7 +9,7 @@
 
 //#include "Globals.h"
 #include "Reference.h"
-#include "cmdinfo.h"
+#include "src/cmdinfo.h"
 
 
 class Duplicate {

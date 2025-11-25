@@ -5,7 +5,7 @@
 #ifndef RERABBITQC_PIGZ_H
 #define RERABBITQC_PIGZ_H
 
-#include "Globals.h"
+#include "src/Globals.h"
 
 
 int main_pigz(int argc, char **argv, moodycamel::ReaderWriterQueue<std::pair<char *, int>> *Q,

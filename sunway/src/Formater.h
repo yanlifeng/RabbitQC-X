@@ -18,7 +18,7 @@
 #include "DataQueue.h"
 #include "FastxChunk.h"
 #include "FastxStream.h"
-#include "Globals.h"
+#include "src/Globals.h"
 //#include "Sequence.h"
 #include "Reference.h"
 

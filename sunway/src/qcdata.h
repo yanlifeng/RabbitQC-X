@@ -2,9 +2,9 @@
 
 #ifndef QC_DATA_H
 #define QC_DATA_H
-#include "cmdinfo.h"
+#include "src/cmdinfo.h"
 #include "threadinfo.h"
-#include "Globals.h"
+#include "src/Globals.h"
 #include "duplicate.h"
 
 struct dupInfo{

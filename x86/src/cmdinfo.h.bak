@@ -5,10 +5,14 @@
 #ifndef RERABBITQC_CMDINFO_H
 #define RERABBITQC_CMDINFO_H
 
+#include "src/Globals.h"
+#include <map>
+#include <unordered_map>
+#include <vector>
+
 class CmdInfo {
 public:
     CmdInfo();
-    void CmdInfoCopy(CmdInfo *cmd_info);
 
 public:
     std::string in_file_name1_;
@@ -20,6 +24,8 @@ public:
     bool isPhred64_;
     bool isStdin_;
     bool isStdout_;
+
+    bool notKeepOrder_;
 
     bool overWrite_;
     bool write_data_;
@@ -43,6 +49,7 @@ public:
     int trim_front2_;
     int trim_tail2_;
 
+    bool use_igzip_;
 
     //param for adapter
     bool trim_adapter_;
@@ -107,6 +114,42 @@ public:
     bool use_pigz_;
     int pugz_threads_;
     int pigz_threads_;
+    
+    //use care
+    bool do_correction_with_care_;
+    std::string pairmode_;
+    int coverage_;
+    int correct_threadnum_;
+    int hashmaps_;
+    int kmerlength_;
+    bool enforceHashmapCount_;
+    bool useQualityScores_;
+    int qualityScoreBits_;
+    bool excludeAmbiguous_;
+    double maxmismatchratio_;
+    int minalignmentoverlap_;
+    double minalignmentoverlapratio_;
+    double errorfactortuning_;
+    double coveragefactortuning_;
+    bool showProgress_;
+    std::string tempdir_;
+    std::string save_preprocessedreads_to_;
+    std::string load_preprocessedreads_from_;
+    std::string save_hashtables_to_;
+    std::string load_hashtables_from_;
+    std::string memHashtables_;
+    std::string memTotal_;
+    double hashloadfactor_;
+    int fixedNumberOfReads_;
+    bool singlehash_;
+    //bool gzoutput_;
+    bool correctionQualityLabels_;
+    bool candidateCorrection_;
+    int candidateCorrectionNewColumns_;
+    int correctionType_;
+    int correctionTypeCands_;
+
+
 };
 
 

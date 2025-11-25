@@ -10,7 +10,7 @@
 #ifndef H_UTILS
 #define H_UTILS
 
-#include "Globals.h"
+#include "src/Globals.h"
 
 #include <string>
 

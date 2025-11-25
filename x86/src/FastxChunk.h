@@ -19,7 +19,7 @@
 #include "Common.h"
 #include "DataPool.h"
 #include "DataQueue.h"
-#include "Globals.h"
+#include "src/Globals.h"
 #include "utils.h"
 
 namespace rabbit {

@@ -5,8 +5,8 @@
 #ifndef RERABBITQC_THREADINFO_H
 #define RERABBITQC_THREADINFO_H
 
-#include "Globals.h"
-#include "cmdinfo.h"
+#include "src/Globals.h"
+#include "src/cmdinfo.h"
 #include "state.h"
 #include "tgsstate.h"
 

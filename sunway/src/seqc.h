@@ -11,11 +11,11 @@
 #include <functional>
 #include <future>
 
+// Include unified Globals.h first (contains MPI headers for Sunway)
+#include "src/Globals.h"
 #include "Formater.h"
-#include "Globals.h"
 #include "adapter.h"
-#include "cmdinfo.h"
-#include "concurrentqueue.h"
+#include "src/cmdinfo.h"
 #include "duplicate.h"
 #include "filter.h"
 #include "pigz.h"

@@ -11,9 +11,9 @@
 #include <sstream>
 #include <unordered_map>
 
-#include "Globals.h"
+#include "src/Globals.h"
 #include "Reference.h"
-#include "cmdinfo.h"
+#include "src/cmdinfo.h"
 #include "nthash.hpp"
 
 struct node {

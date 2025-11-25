@@ -14,7 +14,7 @@
 #include <string>
 #include <utility>
 
-#include "../src/Globals.h"
+#include "src/Globals.h"
 #define DEFAULT_PIPE_BUFFER_SIZE 65536
 
 #ifdef __APPLE_CC__

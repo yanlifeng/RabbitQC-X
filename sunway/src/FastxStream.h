@@ -11,7 +11,7 @@ last modified by Zekun Yin 2020/5/18
 #ifndef H_FASTQSTREAM
 #define H_FASTQSTREAM
 
-#include "Globals.h"
+#include "src/Globals.h"
 
 #include "Buffer.h"
 #include "FastxChunk.h"

@@ -3,7 +3,7 @@
 //
 
 
-#include "cmdinfo.h"
+#include "src/cmdinfo.h"
 
 
 CmdInfo::CmdInfo() {

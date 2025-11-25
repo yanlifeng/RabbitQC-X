@@ -1,27 +1,22 @@
 // Common includes
 #include "CLI11.hpp"
+#include "Globals.h"
+#include "th_ass.h"
+#include "cmdinfo.h"
 #include <iostream>
 #include <fstream>
 
 // Platform-specific includes
 #ifdef PLATFORM_X86
-#include "../x86/src/Globals.h"
-#include "../x86/src/cmdinfo.h"
 #include "../x86/src/peqc.h"
 #include "../x86/src/seqc.h"
-#include "../x86/src/th_ass.h"
 #include <vector>
 #endif
 
 #ifdef PLATFORM_SUNWAY
-#include "../sunway/src/Globals.h"
-#include "../sunway/src/cmdinfo.h"
 #include "../sunway/src/peqc.h"
 #include "../sunway/src/seqc.h"
-#include "../sunway/src/th_ass.h"
 #include "../sunway/src/globalMutex.h"
-#include <mpi.h>
-
 std::mutex globalMutex;
 #endif
 
@@ -58,11 +53,6 @@ int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-#ifdef use_swlu
-    //swlu_debug_init();
-    //swlu_prof_init();
-    //swlu_prof_start();
-#endif
 
     if(my_rank != 0) freopen("dev/null", "w", stdout);
 #endif
@@ -261,28 +251,14 @@ int main(int argc, char **argv) {
 #endif
 
     if(cmd_info.compression_level_ < 1 || cmd_info.compression_level_ > 9){
-#ifdef PLATFORM_X86
         fprintf(stderr, "error : compression level should in [1, 9]!\n");
-#else
-        printf("error : compression level should in [1, 9]!\n");
-#endif
         return 0;
     }
 
     if (quVersion) {
-#ifdef PLATFORM_X86
-        fprintf(stderr, "2.3.0\n");
-#else
-        printf("0.0.2\n");
-#endif
+        fprintf(stderr, "2.0.0\n");
         return 0;
     }
-
-#ifdef PLATFORM_X86
-    if(cmd_info.notKeepOrder_) {
-        //fprintf(stderr, "now do not print data keeping order.\n");
-    }
-#endif
 
 #ifdef PLATFORM_SUNWAY
     if (tmp_no_dup_)cmd_info.state_duplicate_ = false;
@@ -299,19 +275,11 @@ int main(int argc, char **argv) {
 
     if(cmd_info.is_TGS_){
         if(cmd_info.in_file_name2_.length() > 0){
-#ifdef PLATFORM_X86
             fprintf(stderr, "WARNING : the TGS module does not support pe inputs, so ignore the -I parameter.\n");
-#else
-            printf("WARNING : the TGS module does not support pe inputs, so ignore the -I parameter.\n");
-#endif
             cmd_info.in_file_name2_ = "";
         }
         if(cmd_info.out_file_name1_.length() != 0 || cmd_info.out_file_name2_.length() != 0){
-#ifdef PLATFORM_X86
             fprintf(stderr, "WARNING : the TGS module does not support trimming and will not produce output files, so ignore the -o and -O parameter.\n");
-#else
-            printf("WARNING : the TGS module does not support trimming and will not produce output files, so ignore the -o and -O parameter.\n");
-#endif
             cmd_info.out_file_name1_ = "";
             cmd_info.out_file_name2_ = "";
         }
@@ -340,11 +308,7 @@ int main(int argc, char **argv) {
         }
     }
     if(files_ok == 0){
-#ifdef PLATFORM_X86
         fprintf(stderr, "error : for PE data, both files must be of the same type, i.e. cannot be one compressed and one uncompressed!\n");
-#else
-        printf("error : for PE data, both files must be of the same type, i.e. cannot be one compressed and one uncompressed!");
-#endif
         return 0;
     }
 
@@ -550,17 +514,9 @@ int main(int argc, char **argv) {
     if (!quVersion && cmd_info.in_file_name1_.length() == 0) {
         error_exit("-i/--inFile1 can't be null");
     }
-#ifdef PLATFORM_X86
     fprintf(stderr, "inFile1 is %s\n", cmd_info.in_file_name1_.c_str());
-#else
-    printf("inFile1 is %s\n", cmd_info.in_file_name1_.c_str());
-#endif
     if (cmd_info.isStdout_) cmd_info.out_file_name1_ = "/dev/stdout";
-#ifdef PLATFORM_X86
     if (cmd_info.in_file_name2_.length()) fprintf(stderr, "inFile2 is %s\n", cmd_info.in_file_name2_.c_str());
-#else
-    if (cmd_info.in_file_name2_.length()) printf("inFile2 is %s\n", cmd_info.in_file_name2_.c_str());
-#endif
 
     if (cmd_info.out_file_name1_.length()) {
         bool res = exists_file(cmd_info.out_file_name1_);
@@ -570,21 +526,12 @@ int main(int argc, char **argv) {
                 tmps = "y";
             }else{
                 char tmp[100];
-#ifdef PLATFORM_X86
                 fprintf(stderr, "\n");
                 fprintf(stderr, "%s already exists, overwrite it or not ? (y/n)\n", cmd_info.out_file_name1_.c_str());
-#else
-                printf("\n");
-                printf("%s already exists, overwrite it or not ? (y/n)\n", cmd_info.out_file_name1_.c_str());
-#endif
                 scanf("%s", tmp);
                 tmps = string(tmp);
                 while(tmps != "y" && tmps != "n"){
-#ifdef PLATFORM_X86
                     fprintf(stderr, "please input y or n\n");
-#else
-                    printf("please input y or n\n");
-#endif
                     scanf("%s", tmp);
                     tmps = string(tmp);
                 }
@@ -597,11 +544,7 @@ int main(int argc, char **argv) {
                 assert(0);
             }
         }
-#ifdef PLATFORM_X86
         fprintf(stderr, "outFile1 is %s\n", cmd_info.out_file_name1_.c_str());
-#else
-        printf("outFile1 is %s\n", cmd_info.out_file_name1_.c_str());
-#endif
     }
 
     if (cmd_info.out_file_name2_.length()) {
@@ -612,21 +555,12 @@ int main(int argc, char **argv) {
                 tmps = "y";
             }else{
                 char tmp[100];
-#ifdef PLATFORM_X86
                 fprintf(stderr, "\n");
                 fprintf(stderr, "%s already exists, overwrite it or not ? (y/n)\n", cmd_info.out_file_name2_.c_str());
-#else
-                printf("\n");
-                printf("%s already exists, overwrite it or not ? (y/n)\n", cmd_info.out_file_name2_.c_str());
-#endif
                 scanf("%s", tmp);
                 tmps = string(tmp);
                 while(tmps != "y" && tmps != "n"){
-#ifdef PLATFORM_X86
                     fprintf(stderr, "please input y or n\n");
-#else
-                    printf("please input y or n\n");
-#endif
                     scanf("%s", tmp);
                     tmps = string(tmp);
                 }
@@ -639,11 +573,7 @@ int main(int argc, char **argv) {
                 assert(0);
             }
         }
-#ifdef PLATFORM_X86
         fprintf(stderr, "outFile2 is %s\n", cmd_info.out_file_name2_.c_str());
-#else
-        printf("outFile2 is %s\n", cmd_info.out_file_name2_.c_str());
-#endif
     }
 
     string prefix_name1;
@@ -701,56 +631,28 @@ int main(int argc, char **argv) {
         cmd_info.adapter_seq1_ = "";
         cmd_info.adapter_seq2_ = "";
         cmd_info.adapter_fasta_file_ = "";
-#ifdef PLATFORM_X86
         fprintf(stderr, "no adapter trim (ignore '--adapterSeq*' and '--adapterFastaFile' options) because using the '-a (--noTrimAdapter)' option!\n");
-#else
-        printf("no adapter trim (ignore '--adapterSeq*' and '--adapterFastaFile' options) because using the '-a (--noTrimAdapter)' option!\n");
-#endif
     }
 
     if (cmd_info.trim_5end_) {
-#ifdef PLATFORM_X86
         fprintf(stderr, "now do 5end trim\n");
-#else
-        printf("now do 5end trim\n");
-#endif
     }
     if (cmd_info.trim_3end_) {
-#ifdef PLATFORM_X86
         fprintf(stderr, "now do 3end trim\n");
-#else
-        printf("now do 3end trim\n");
-#endif
     }
     if (cmd_info.trim_polyg_) {
-#ifdef PLATFORM_X86
         fprintf(stderr, "now do polyg trim\n");
-#else
-        printf("now do polyg trim\n");
-#endif
     }
     if (cmd_info.trim_polyx_) {
-#ifdef PLATFORM_X86
         fprintf(stderr, "now do polyx trim\n");
-#else
-        printf("now do polyx trim\n");
-#endif
     }
 
     if (cmd_info.add_umi_) {
-#ifdef PLATFORM_X86
         fprintf(stderr, "now doing umi add\n");
         fprintf(stderr, "umi location is %s\n", umiLoc.c_str());
         fprintf(stderr, "umi len is %d\n", cmd_info.umi_len_);
         fprintf(stderr, "umi skip is %d\n", cmd_info.umi_skip_);
         fprintf(stderr, "umi prefix is %s\n", cmd_info.umi_prefix_.c_str());
-#else
-        printf("now doing umi add\n");
-        printf("umi location is %s\n", umiLoc.c_str());
-        printf("umi len is %d\n", cmd_info.umi_len_);
-        printf("umi skip is %d\n", cmd_info.umi_skip_);
-        printf("umi prefix is %s\n", cmd_info.umi_prefix_.c_str());
-#endif
 
         if (umiLoc.empty())
             error_exit("You've enabled UMI by (--addUmi), you should specify the UMI location by (--umiLoc)");
@@ -779,13 +681,8 @@ int main(int argc, char **argv) {
     }
 
     if (cmd_info.do_overrepresentation_) {
-#ifdef PLATFORM_X86
         fprintf(stderr, "now doing overrepresentation\n");
         fprintf(stderr, "overrepresentation sampling is %d\n", cmd_info.overrepresentation_sampling_);
-#else
-        printf("now doing overrepresentation\n");
-        printf("overrepresentation sampling is %d\n", cmd_info.overrepresentation_sampling_);
-#endif
     }
 
     //if (cmd_info.isPhred64_) {
@@ -820,17 +717,10 @@ int main(int argc, char **argv) {
 #endif
     cmd_info.seq_len_ = mx_len;
     if(cmd_info.adapter_fasta_file_.length() > 0){
-#ifdef PLATFORM_X86
         fprintf(stderr, "loading adatper from %s\n", cmd_info.adapter_fasta_file_.c_str());
         cmd_info.adapter_from_fasta_ = Adapter::LoadAdaptersFromFasta(cmd_info.adapter_fasta_file_);
         sort(cmd_info.adapter_from_fasta_.begin(), cmd_info.adapter_from_fasta_.end());
         for(auto item : cmd_info.adapter_from_fasta_)fprintf(stderr, " --- %s ---\n", item.c_str());
-#else
-        printf("loading adatper from %s\n", cmd_info.adapter_fasta_file_.c_str());
-        cmd_info.adapter_from_fasta_ = Adapter::LoadAdaptersFromFasta(cmd_info.adapter_fasta_file_);
-        sort(cmd_info.adapter_from_fasta_.begin(), cmd_info.adapter_from_fasta_.end());
-        for (auto item: cmd_info.adapter_from_fasta_)printf(" --- %s ---\n", item.c_str());
-#endif
     }
     double t_start = GetTime();
 
@@ -843,153 +733,75 @@ int main(int argc, char **argv) {
 
         //adapter
         if (cmd_info.adapter_seq1_.length()) {
-#ifdef PLATFORM_X86
             fprintf(stderr, "input adapter1 is %s\n", cmd_info.adapter_seq1_.c_str());
-#else
-            printf("input adapter1 is %s\n", cmd_info.adapter_seq1_.c_str());
-#endif
             if (cmd_info.adapter_seq2_.length() == 0) {
                 cmd_info.adapter_seq2_ = cmd_info.adapter_seq1_;
             }
-#ifdef PLATFORM_X86
             fprintf(stderr, "input adapter2 is %s\n", cmd_info.adapter_seq2_.c_str());
-#else
-            printf("input adapter2 is %s\n", cmd_info.adapter_seq2_.c_str());
-#endif
             cmd_info.pe_auto_detect_adapter_ = false;
             cmd_info.detect_adapter1_ = true;
             cmd_info.detect_adapter2_ = true;
         }
         if (cmd_info.pe_auto_detect_adapter_) {
             double t2 = GetTime();
-#ifdef PLATFORM_X86
             fprintf(stderr, "now auto detect adapter\n");
-#else
-            printf("now auto detect adapter\n");
-#endif
             cmd_info.adapter_seq1_ = Adapter::AutoDetect(cmd_info.in_file_name1_, cmd_info.trim_tail1_);
             cmd_info.adapter_seq2_ = Adapter::AutoDetect(cmd_info.in_file_name2_, cmd_info.trim_tail1_);
             if (cmd_info.adapter_seq1_.length()) {
-#ifdef PLATFORM_X86
                 fprintf(stderr, "find adapter %s in read1\n", cmd_info.adapter_seq1_.c_str());
-#else
-                printf("find adapter %s in read1\n", cmd_info.adapter_seq1_.c_str());
-#endif
                 cmd_info.detect_adapter1_ = true;
             } else {
-#ifdef PLATFORM_X86
                 fprintf(stderr, "not find adapter in read1\n");
-#else
-                printf("not find adapter in read1\n");
-#endif
             }
             if (cmd_info.adapter_seq2_.length()) {
-#ifdef PLATFORM_X86
                 fprintf(stderr, "find adapter %s in read2\n", cmd_info.adapter_seq2_.c_str());
-#else
-                printf("find adapter %s in read2\n", cmd_info.adapter_seq2_.c_str());
-#endif
                 cmd_info.detect_adapter2_ = true;
             } else {
-#ifdef PLATFORM_X86
                 fprintf(stderr, "not find adapter in read2\n");
-#else
-                printf("not find adapter in read2\n");
-#endif
             }
 #ifdef Verbose
-#ifdef PLATFORM_X86
             fprintf(stderr, "detect adapter cost %.5f\n", GetTime() - t2);
-#else
-            printf("detect adapter cost %.5f\n", GetTime() - t2);
-#endif
 #endif
         }
 #ifdef Verbose
         if (cmd_info.correct_data_) {
-#ifdef PLATFORM_X86
             fprintf(stderr, "now correct data\n");
-#else
-            printf("now correct data\n");
-#endif
         }
 #endif
         if (cmd_info.trim_adapter_ || cmd_info.correct_data_ || !cmd_info.no_insert_size_) {
             cmd_info.analyze_overlap_ = true;
-#ifdef PLATFORM_X86
             fprintf(stderr, "for PE data, overlap analysis is used to find adapter by default\n");
-#else
-            printf("for PE data, overlap analysis is used to find adapter by default\n");
-#endif
         }
 
         if (cmd_info.trim_front1_) {
-#ifdef PLATFORM_X86
             fprintf(stderr, "read1 trim front %d bases\n", cmd_info.trim_front1_);
-#else
-            printf("read1 trim front %d bases\n", cmd_info.trim_front1_);
-#endif
             cmd_info.trim_front2_ = cmd_info.trim_front1_;
-#ifdef PLATFORM_X86
             fprintf(stderr, "read2 trim front %d bases\n", cmd_info.trim_front2_);
-#else
-            printf("read2 trim front %d bases\n", cmd_info.trim_front2_);
-#endif
         }
         if (cmd_info.trim_tail1_) {
-#ifdef PLATFORM_X86
             fprintf(stderr, "read1 trim tail %d bases\n", cmd_info.trim_tail1_);
-#else
-            printf("read1 trim tail %d bases\n", cmd_info.trim_tail1_);
-#endif
             cmd_info.trim_tail2_ = cmd_info.trim_tail1_;
-#ifdef PLATFORM_X86
             fprintf(stderr, "read2 trim tail %d bases\n", cmd_info.trim_tail2_);
-#else
-            printf("read2 trim tail %d bases\n", cmd_info.trim_tail2_);
-#endif
         }
 
         if (cmd_info.do_overrepresentation_) {
             double t2 = GetTime();
-#ifdef PLATFORM_X86
             fprintf(stderr, "now doing overrepresent preprocessing part\n");
-#else
-            printf("now doing overrepresent preprocessing part\n");
-#endif
             Adapter::PreOverAnalyze(cmd_info.in_file_name1_, cmd_info.hot_seqs_, cmd_info.eva_len_);
             Adapter::PreOverAnalyze(cmd_info.in_file_name2_, cmd_info.hot_seqs2_, cmd_info.eva_len2_);
-#ifdef PLATFORM_X86
             fprintf(stderr, "overrepresent preprocessing part done\n");
             fprintf(stderr, "read1 has %d hot sequence\n", cmd_info.hot_seqs_.size());
             fprintf(stderr, "read2 has %d hot sequence\n", cmd_info.hot_seqs2_.size());
-#else
-            printf("overrepresent preprocessing part done\n");
-            printf("read1 has %d hot sequence\n", cmd_info.hot_seqs_.size());
-            printf("read2 has %d hot sequence\n", cmd_info.hot_seqs2_.size());
-#endif
 #ifdef Verbose
-#ifdef PLATFORM_X86
             fprintf(stderr, "pre over representation cost %.5f\n", GetTime() - t2);
-#else
-            printf("pre over representation cost %.5f\n", GetTime() - t2);
-#endif
 #endif
         }
 
         if (cmd_info.interleaved_in_) {
-#ifdef PLATFORM_X86
             fprintf(stderr, "now input use interleaved pe data\n");
-#else
-            printf("now input use interleaved pe data\n");
-#endif
         }
         if (cmd_info.interleaved_out_) {
-#ifdef PLATFORM_X86
             fprintf(stderr, "now output use interleaved pe data\n");
-#else
-            printf("now output use interleaved pe data\n");
-#endif
         }
         if (cmd_info.adapter_seq1_.length() > 0)
             cmd_info.adapter_len_lim_ = min(cmd_info.adapter_len_lim_, int(cmd_info.adapter_seq1_.length()));
@@ -1012,80 +824,39 @@ int main(int argc, char **argv) {
         }
         //adapter
         if (cmd_info.adapter_seq1_.length()) {
-#ifdef PLATFORM_X86
             fprintf(stderr, "input adapter is %s\n", cmd_info.adapter_seq1_.c_str());
-#else
-            printf("input adapter is %s\n", cmd_info.adapter_seq1_.c_str());
-#endif
             cmd_info.se_auto_detect_adapter_ = false;
             cmd_info.detect_adapter1_ = true;
         }
         if (cmd_info.se_auto_detect_adapter_) {
             double t2 = GetTime();
-#ifdef PLATFORM_X86
             fprintf(stderr, "now auto detect adapter\n");
-#else
-            printf("now auto detect adapter\n");
-#endif
             cmd_info.adapter_seq1_ = Adapter::AutoDetect(cmd_info.in_file_name1_, cmd_info.trim_tail1_);
             if (cmd_info.adapter_seq1_.length()) {
-#ifdef PLATFORM_X86
                 fprintf(stderr, "find adapter %s\n", cmd_info.adapter_seq1_.c_str());
-#else
-                printf("find adapter %s\n", cmd_info.adapter_seq1_.c_str());
-#endif
                 cmd_info.detect_adapter1_ = true;
             } else {
-#ifdef PLATFORM_X86
                 fprintf(stderr, "not find adapter\n");
-#else
-                printf("not find adapter\n");
-#endif
             }
 #ifdef Verbose
-#ifdef PLATFORM_X86
             fprintf(stderr, "detect adapter cost %.5f\n", GetTime() - t2);
-#else
-            printf("detect adapter cost %.5f\n", GetTime() - t2);
-#endif
 #endif
         }
         if (cmd_info.trim_front1_) {
-#ifdef PLATFORM_X86
             fprintf(stderr, "trim front %d bases\n", cmd_info.trim_front1_);
-#else
-            printf("trim front %d bases\n", cmd_info.trim_front1_);
-#endif
         }
         if (cmd_info.trim_tail1_) {
-#ifdef PLATFORM_X86
             fprintf(stderr, "trim tail %d bases\n", cmd_info.trim_tail1_);
-#else
-            printf("trim tail %d bases\n", cmd_info.trim_tail1_);
-#endif
         }
 
         if (cmd_info.do_overrepresentation_) {
             double t2 = GetTime();
-#ifdef PLATFORM_X86
             fprintf(stderr, "now doing overrepresent preprocessing part\n");
-#else
-            printf("now doing overrepresent preprocessing part\n");
-#endif
             Adapter::PreOverAnalyze(cmd_info.in_file_name1_, cmd_info.hot_seqs_, cmd_info.eva_len_);
-#ifdef PLATFORM_X86
             fprintf(stderr, "overrepresent preprocessing part done\n");
             fprintf(stderr, "total %d hot sqes\n", cmd_info.hot_seqs_.size());
-#else
-            printf("overrepresent preprocessing part done\n");
-            printf("total %d hot sqes\n", cmd_info.hot_seqs_.size());
-#endif
 #ifdef Verbose
-#ifdef PLATFORM_X86
             fprintf(stderr, "pre over representation cost %.5f\n", GetTime() - t2);
-#else
-            printf("pre over representation cost %.5f\n", GetTime() - t2);
-#endif
 #endif
         }
         if (cmd_info.adapter_seq1_.length() > 0)
@@ -1124,21 +895,12 @@ int main(int argc, char **argv) {
         }
     }
 #endif
-#ifdef PLATFORM_X86
     fprintf(stderr, "cmd is %s\n", command.c_str());
     fprintf(stderr, "total cost %.5fs\n", GetTime() - t_start);
+#ifdef PLATFORM_X86
 #else
-    printf("cmd is %s\n", command.c_str());
-    printf("total cost %.5fs\n", GetTime() - t_start);
-
-#ifdef use_swlu
-    //swlu_prof_stop();
-    //swlu_prof_print();
-#endif
-
     MPI_Finalize();
     printf("MPI_Finalize done\n");
-    //exit(0);
 #endif
     return 0;
 }

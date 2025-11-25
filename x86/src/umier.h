@@ -6,7 +6,7 @@
 #define RERABBITQC_UMIER_H
 
 #include "Reference.h"
-#include "cmdinfo.h"
+#include "src/cmdinfo.h"
 #include <cstring>
 
 class Umier {

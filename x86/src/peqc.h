@@ -13,9 +13,9 @@
 #include <sys/time.h>
 
 #include "Formater.h"
-#include "Globals.h"
+#include "src/Globals.h"
 #include "adapter.h"
-#include "cmdinfo.h"
+#include "src/cmdinfo.h"
 #include "duplicate.h"
 #include "filter.h"
 #include "pigz.h"

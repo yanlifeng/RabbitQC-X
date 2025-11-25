@@ -35,7 +35,7 @@ These upstream projects are kept as close as possible to their original behavior
 
 #### For x86 Platform:
 - 64-bit Linux system
-- GCC 4.8.5 or newer (GCC 9.0+ recommended for best performance)
+- GCC 7.5.0 or newer (GCC 9.0+ recommended for best performance)
 - zlib library
 - OpenMP support
 
@@ -72,31 +72,27 @@ cmake -DPLATFORM=sunway ..
 make -j8
 ```
 
-The compiled executable `rabbitqc-x` will be located in the `build-sunway` directory.
-
-**Note**: If you encounter compilation errors on Sunway platform (especially `'TDataPool' does not name a template type`), please:
-1. Clean old build directories: `rm -rf build-sunway build`
-2. Run the diagnostic script: `./diagnose_sunway.sh`
-3. See [SUNWAY_BUILD_FIX.md](SUNWAY_BUILD_FIX.md) for detailed troubleshooting steps
-
 ## Project Structure
 
 ```
 RabbitQC-X/
+├── src/                 # Unified entry point
+│   ├── main.cpp        # Unified main program (platform-specific via #ifdef)
+│   └── CLI11.hpp       # Command-line parsing library
 ├── common/              # Shared code between platforms
+│   ├── lib/            # Unified library files (merged from both platforms)
+│   ├── include/        # Shared header files
 │   ├── common.hpp
 │   ├── exceptions.hpp
 │   └── system.h
 ├── x86/                 # x86 platform specific code
-│   ├── src/            # Source files
-│   ├── include/        # Header files
+│   ├── src/            # x86 source files
+│   ├── include/        # x86 header files
 │   ├── dependencies/   # Third-party dependencies (Thrust)
-│   ├── lib/            # Library files
 │   └── CMakeLists.txt
 ├── sunway/             # Sunway platform specific code
 │   ├── src/            # Host source files
 │   ├── slave/          # Slave core source files
-│   ├── lib/            # Library files
 │   └── CMakeLists.txt
 ├── CMakeLists.txt      # Top-level CMake configuration
 └── README.md           # This file
@@ -189,6 +185,10 @@ Lifeng Yan, Zekun Yin, Hao Zhang, Zhan Zhao, Mingkai Wang, André Müller, Felix
 Lifeng Yan, Zekun Yin, Hao Zhang, Zhan Zhao, Mingkai Wang, André Müller, Robin Kobus, Yanjie Wei, Beifang Niu, Bertil Schmidt, Weiguo Liu. "RabbitQCPlus: More Efficient Quality Control for Sequencing Data," *2022 IEEE International Conference on Bioinformatics and Biomedicine (BIBM)*, Las Vegas, NV, USA, 2022, pp. 619-626, doi: 10.1109/BIBM55620.2022.9995332.
 
 Zekun Yin, Hao Zhang, Meiyang Liu, Wen Zhang, Honglei Song, Haidong Lan, Yanjie Wei, Beifang Niu, Bertil Schmidt, Weiguo Liu, RabbitQC: High-speed scalable quality control for sequencing data, Bioinformatics, , btaa719, https://doi.org/10.1093/bioinformatics/btaa719
+
+### For Sunway Platform (SWQC):
+
+Yan L, Yin Z, Zhang T, et al. SWQC: Efficient sequencing data quality control on the next-generation sunway platform[J]. Future Generation Computer Systems, 2025, 164: 107577.
 
 ## Contributing
 

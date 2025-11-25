@@ -61,10 +61,6 @@ inline double GetTime() {
     return (double) tv.tv_sec + (double) tv.tv_usec / 1000000;
 }
 
-//#define use_swlu
-#ifdef use_swlu
-#include "swlu.h"
-#endif
 
 
 

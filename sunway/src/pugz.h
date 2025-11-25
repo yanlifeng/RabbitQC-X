@@ -6,7 +6,7 @@
 #define RERABBITQC_PUGZ_H
 
 
-#include "Globals.h"
+#include "src/Globals.h"
 
 
 void main_pugz(std::string in_name, int threads, moodycamel::ReaderWriterQueue<std::pair<char *, int>> *Q,

@@ -7,7 +7,7 @@
 
 #include <cstring>
 #include <sstream>
-#include "Globals.h"
+#include "src/Globals.h"
 
 class NucleotideNode {
 public:

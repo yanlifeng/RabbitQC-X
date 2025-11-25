@@ -12,7 +12,7 @@
 
 #include <queue>
 
-#include "Globals.h"
+#include "src/Globals.h"
 
 #ifdef USE_BOOST_THREAD
 #include <boost/thread.hpp>

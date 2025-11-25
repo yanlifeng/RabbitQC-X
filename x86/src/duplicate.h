@@ -11,9 +11,9 @@
 #include <iostream>
 #include <mutex>
 
-#include "Globals.h"
+#include "src/Globals.h"
 #include "Reference.h"
-#include "cmdinfo.h"
+#include "src/cmdinfo.h"
 
 
 class Duplicate {

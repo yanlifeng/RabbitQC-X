@@ -10,10 +10,11 @@
 #include <fstream>
 #include <functional>
 
+// Include unified Globals.h first (contains MPI headers for Sunway)
+#include "src/Globals.h"
 #include "Formater.h"
-#include "Globals.h"
 #include "adapter.h"
-#include "cmdinfo.h"
+#include "src/cmdinfo.h"
 #include "duplicate.h"
 #include "filter.h"
 #include "pigz.h"

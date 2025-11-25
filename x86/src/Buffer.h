@@ -13,7 +13,7 @@
 #define BUFFER_H
 
 #include <algorithm>
-#include "Globals.h"
+#include "src/Globals.h"
 #include "utils.h"
 
 namespace rabbit {
