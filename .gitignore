@@ -1,0 +1,51 @@
+# Build directories
+build/
+build-x86/
+build-sunway/
+cmake-build-*/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Object files
+*.o
+*.obj
+x86/obj/*.o
+sunway/obj/*.o
+
+# Executables
+rabbitqc-x
+rabbitqcplus
+RabbitQCPlus
+SWQC
+swqc
+
+# Compiled libraries
+*.a
+*.so
+*.dylib
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test output
+*.fastq.gz
+*.fastq
+test_output/
+
+# Log files
+*.log
+
