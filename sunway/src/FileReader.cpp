@@ -5,7 +5,7 @@ extern "C" {
 #include <pthread.h>
 void slave_decompressfunc();
 }
-#define USE_LIBDEFLATE
+// USE_LIBDEFLATE is always enabled (code is written directly)
 namespace rabbit {
 
     FileReader::FileReader(const std::string &fileName_, bool isZipped, int64 startPos, int64 endPos, bool inMem) {
@@ -14,7 +14,7 @@ namespace rabbit {
         start_pos = 0;
         end_pos = 0;
         if (ends_with(fileName_, ".gz") || isZipped) {
-#ifdef USE_LIBDEFLATE
+            // USE_LIBDEFLATE is always enabled
             start_line = startPos;
             end_line = endPos;
             std::ifstream iff_idx;
@@ -85,15 +85,6 @@ namespace rabbit {
                     exit(0);
                 }
             }
-
-#else
-            mZipFile = gzopen(fileName_.c_str(), "r");
-            gzrewind(mZipFile);
-            if (read_in_mem) {
-                fprintf(stderr, "zlib not support read in mem\n");
-                exit(0);
-            }
-#endif
             this->isZipped = true;
         } else {
             start_pos = startPos;
@@ -144,7 +135,7 @@ namespace rabbit {
         if (mZipFile != NULL) {
             gzclose(mZipFile);
         }
-#ifdef USE_LIBDEFLATE
+        // USE_LIBDEFLATE is always enabled
         if (isZipped) {
             if (input_file != NULL) {
                 fclose(input_file);
@@ -159,7 +150,6 @@ namespace rabbit {
             }
             delete[] to_read_buffer;
         }
-#endif
     }
 
     void FileReader::DecompressMore() {
@@ -226,8 +216,7 @@ namespace rabbit {
 
     int64 FileReader::Read(byte *memory_, uint64 size_) {
         if (isZipped) {
-#ifdef USE_LIBDEFLATE
-#ifdef USE_CC_GZ
+            // USE_LIBDEFLATE and USE_CC_GZ are always enabled
             size_t to_read = 0;
             if (now_block == end_line) {
                 to_read = 0;
@@ -250,42 +239,11 @@ namespace rabbit {
                 }
                 assert(to_read == in_size);
                 return to_read;
-                //fprintf(stderr, "use consumer slave gz in in_mem module is TODO!\n");
-                //exit(0);
             } else {
                 int64 n = fread(memory_, 1, to_read, input_file);
                 assert(n == to_read);
-                //fprintf(stderr, "nn %lld\n", n);
                 return n;
             }
-            
-#else
-            if (buffer_now_pos + size_ > buffer_tot_size) {
-                DecompressMore();
-                if (buffer_now_pos + size_ > buffer_tot_size) {
-                    fprintf(stderr, "after decom still not big enough, read done, -- %d\n", iff_idx_end);
-                    size_ = buffer_tot_size - buffer_now_pos;
-                }
-            }
-            memcpy(memory_, to_read_buffer + buffer_now_pos, size_);
-            buffer_now_pos += size_;
-            return size_;
-#endif
-#else
-            if(read_in_mem) {
-                fprintf(stderr, "zlib not support read in mem\n");
-                exit(0);
-            }
-            int64 n = gzread(mZipFile, memory_, size_);
-            if (n == -1) {
-                int errNum;
-                const char* errorMsg = gzerror(mZipFile, &errNum);
-                if (errNum) {
-                    std::cerr << "Error to read gzip file: " << errorMsg << std::endl;
-                }
-            }
-            return n;
-#endif
         } else {
             if (read_in_mem) {
                 int64 lastDataSize = MemDataTotSize - MemDataNowPos;
@@ -311,13 +269,9 @@ namespace rabbit {
 
     bool FileReader::FinishRead() {
         if (isZipped) {
-            //fprintf(stderr, " finish ? %d--%lld %lld\n", iff_idx_end, buffer_now_pos, buffer_tot_size);
-#ifdef USE_LIBDEFLATE
+            // USE_LIBDEFLATE is always enabled
             if(read_in_mem) return (iff_idx_end || MemDataReadFinish) && (buffer_now_pos == buffer_tot_size);
             else return (iff_idx_end || feof(input_file)) && (buffer_now_pos == buffer_tot_size);
-#else
-            return gzeof(mZipFile);
-#endif
         } else {
             //fprintf(stderr, " finish ? %lld %lld\n", total_read, has_read);
             if (read_in_mem) return MemDataReadFinish;

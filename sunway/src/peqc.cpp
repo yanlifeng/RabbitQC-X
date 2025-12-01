@@ -101,13 +101,7 @@ PeQc::PeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
     in_is_zip_ = cmd_info1->in_file_name1_.find(".gz") != string::npos;
     out_is_zip_ = cmd_info1->out_file_name1_.find(".gz") != string::npos;
 
-    if(in_is_zip_ && comm_size > 1) {
-#ifdef USE_LIBDEFLATE
-#else
-        if(my_rank == 0) fprintf(stderr, "compress file input for multi-process is not support, please use -DUSE_LIBDEFLATE in makefile.\n");
-        exit(0);
-#endif
-    }
+    // USE_LIBDEFLATE is always enabled
 
 
     ifstream gFile;
@@ -129,11 +123,9 @@ PeQc::PeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
 
     int64_t start_pos, end_pos;
     if(in_is_zip_) {
-#ifdef USE_CC_GZ
         for(int i = 0; i < 64; i++) {
             cc_gz_in_buffer[i] = new char[BLOCK_SIZE];
         }
-#endif
         vector<size_t> block_sizes;
         if(use_swidx_file) {
             ifstream iff_idx;
@@ -270,8 +262,7 @@ PeQc::PeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
                 printf("open gzip stream2 %s\n", cmd_info1->out_file_name2_.c_str());
 #endif
 
-#ifdef USE_LIBDEFLATE
-
+                // USE_LIBDEFLATE is always enabled
                 ofstream file1(cmd_info1->out_file_name1_.c_str());
 
                 if (file1.is_open()) {
@@ -319,14 +310,6 @@ PeQc::PeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
                     MPI_Abort(MPI_COMM_WORLD, err2);
                     exit(0);
                 }
-#else
-                zip_out_stream1 = gzopen(cmd_info1->out_file_name1_.c_str(), "w");
-                gzsetparams(zip_out_stream1, cmd_info1->compression_level_, Z_DEFAULT_STRATEGY);
-                gzbuffer(zip_out_stream1, 1024 * 1024);
-                zip_out_stream2 = gzopen(cmd_info1->out_file_name2_.c_str(), "w");
-                gzsetparams(zip_out_stream2, cmd_info1->compression_level_, Z_DEFAULT_STRATEGY);
-                gzbuffer(zip_out_stream2, 1024 * 1024);
-#endif
             }
         } else {
 #ifdef Verbose
@@ -480,11 +463,9 @@ PeQc::~PeQc() {
         delete []out_queue_;
     }
     if(in_is_zip_) {
-#ifdef USE_CC_GZ
         for(int i = 0; i < 64; i++) {
             delete []cc_gz_in_buffer[i];
         }
-#endif
     }
     if (cmd_info_->state_duplicate_) {
         delete duplicate_;
@@ -741,11 +722,7 @@ void PeQc::ProcessFormatQCWrite(bool &allIsNull, vector <neoReference> *data1, v
     if (cmd_info_->write_data_) {
         long long now_pos_base1 = 0;
         long long now_pos_base2 = 0;
-        bool use_consumer_libdeflate = 0;
-
-#ifdef CONSUMER_USE_LIBDEFLATE
-        use_consumer_libdeflate = 1;
-#endif
+        bool use_consumer_libdeflate = 1;  // CONSUMER_USE_LIBDEFLATE is always enabled
         if(!out_is_zip_ || use_consumer_libdeflate == 0) {
             int out_len1 = 0;
             for(int i = 0; i < 64; i++) {
@@ -1010,10 +987,8 @@ void PeQc::ConsumerPeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
             fqdatachunks.push_back(NULL);
         }
 
-#ifdef USE_CC_GZ
-#ifdef USE_LIBDEFLATE
+        // USE_CC_GZ and USE_LIBDEFLATE are always enabled
         if(in_is_zip_) {
-
             //left chunk
             {
                 Para degz_paras[64];
@@ -1031,13 +1006,11 @@ void PeQc::ConsumerPeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
                     degz_paras[i].out_size = &(out_size[i]);
                 }
 
-
                 {
                     lock_guard <mutex> guard(globalMutex);
                     __real_athread_spawn((void *) slave_decompressfunc, degz_paras, 1);
                     athread_join();
                 }
-
 
                 for (int i = 0; i < 64; i++) {
                     if(fqdatachunks[i] == NULL) {
@@ -1046,7 +1019,6 @@ void PeQc::ConsumerPeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
                         else fqdatachunks[i]->left_part->size = out_size[i];
                     }
                 }
-
             }
 
             //right chunk
@@ -1066,13 +1038,11 @@ void PeQc::ConsumerPeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
                     degz_paras[i].out_size = &(out_size[i]);
                 }
 
-
                 {
                     lock_guard <mutex> guard(globalMutex);
                     __real_athread_spawn((void *) slave_decompressfunc, degz_paras, 1);
                     athread_join();
                 }
-
 
                 for (int i = 0; i < 64; i++) {
                     if(fqdatachunks[i] == NULL) {
@@ -1081,12 +1051,8 @@ void PeQc::ConsumerPeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
                         else fqdatachunks[i]->right_part->size = out_size[i];
                     }
                 }
-
             }
-
         }
-#endif
-#endif
 
         t_decom += GetTime() - tt0;
 
@@ -1094,8 +1060,7 @@ void PeQc::ConsumerPeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
         ProcessFormatQCWrite(allIsNull, data1, data2, pass_data1, pass_data2, pre_pass_data1, pre_pass_data2, fqdatachunks, pre_fqdatachunks, &para, fastqPool);
         t_ngsfunc += GetTime() - tt0;
 
-        //fprintf(stderr, "rank%d pending write size %d\n", my_rank, writeInfosPE.size());
-#ifdef CONSUMER_USE_LIBDEFLATE
+        // CONSUMER_USE_LIBDEFLATE is always enabled
         tt0 = GetTime();
         if (cmd_info_->write_data_ && out_is_zip_) {
             Para paras[64];
@@ -1235,7 +1200,6 @@ void PeQc::ConsumerPeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
         }
         
         t_slave_gz += GetTime() - tt0;
-#endif
 
         if (cmd_info_->write_data_) {
             tt0 = GetTime();
@@ -1244,9 +1208,6 @@ void PeQc::ConsumerPeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
             long long real_pre_chunk_pos2 = writeInfosPE[0].file_offset2;
             for(int i = 0; i < 64; i++) {
                 while (queueNumNow >= queueSizeLim) {
-#ifdef Verbose
-                    //printf("waiting to push a chunk to out queue1\n");
-#endif
                     usleep(1000);
                 }
                 out_queue_[queueP2++] = make_pair(make_pair(writeInfosPE[i].buffer, make_pair(writeInfosPE[i].buffer_len, real_pre_chunk_pos1)), make_pair(writeInfosPE[i].buffer2, make_pair(writeInfosPE[i].buffer_len2, real_pre_chunk_pos2)));
@@ -1357,8 +1318,7 @@ void PeQc::WriteSeFastqTask12() {
                     memcpy(OutMemData2, now2.first, now2.second.first);
 
                 } else {
-#ifdef USE_LIBDEFLATE
-
+                    // USE_LIBDEFLATE is always enabled
 #ifdef use_mpi_file
                     if(cmd_info_->splitWrite_ == 0) {
                         MPI_File_seek(fh1, now1.second.second, MPI_SEEK_SET);
@@ -1370,27 +1330,11 @@ void PeQc::WriteSeFastqTask12() {
                     }
                     MPI_File_write(fh2, now2.first, now2.second.first, MPI_CHAR, &status2);
 #else
-
                     fseek(out_stream1_, now1.second.second, SEEK_SET);
                     fwrite(now1.first, sizeof(char), now1.second.first, out_stream1_);
 
                     fseek(out_stream2_, now2.second.second, SEEK_SET);
                     fwrite(now2.first, sizeof(char), now2.second.first, out_stream2_);
-#endif
-
-
-#else
-                    int written1 = gzwrite(zip_out_stream1, now1.first, now1.second.first);
-                    if (written1 != now1.second.first) {
-                        printf("gzwrite error\n");
-                        exit(0);
-                    }
-
-                    int written2 = gzwrite(zip_out_stream2, now2.first, now2.second.first);
-                    if (written2 != now2.second.first) {
-                        printf("gzwrite error\n");
-                        exit(0);
-                    }
 #endif
                 }
 
@@ -1475,7 +1419,7 @@ void PeQc::WriteSeFastqTask12() {
             exit(0);
 
         } else {
-#ifdef USE_LIBDEFLATE
+            // USE_LIBDEFLATE is always enabled
 #ifdef use_mpi_file
             MPI_File_close(&fh1);
             MPI_File_close(&fh2);
@@ -1487,21 +1431,6 @@ void PeQc::WriteSeFastqTask12() {
             fclose(out_stream2_);
             if(my_rank == 0) {
                 truncate(cmd_info_->out_file_name2_.c_str(), sizeof(char) * zip_now_pos2_);
-            }
-#endif
-            //off_idx1.close();
-            //off_idx2.close();
-
-#else
-            if (zip_out_stream1) {
-                gzflush(zip_out_stream1, Z_FINISH);
-                gzclose(zip_out_stream1);
-                zip_out_stream1 = NULL;
-            }
-            if (zip_out_stream2) {
-                gzflush(zip_out_stream2, Z_FINISH);
-                gzclose(zip_out_stream2);
-                zip_out_stream2 = NULL;
             }
 #endif
         }

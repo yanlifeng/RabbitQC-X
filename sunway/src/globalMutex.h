@@ -1,9 +1,8 @@
 #ifndef GLOBALMUTEX_H
 #define GLOBALMUTEX_H
 
-#define USE_LIBDEFLATE
-//#define WRITER_USE_LIBDEFLATE
-#define CONSUMER_USE_LIBDEFLATE
+// USE_LIBDEFLATE, CONSUMER_USE_LIBDEFLATE, USE_CC_GZ are always enabled (code is written directly)
+// WRITER_USE_LIBDEFLATE is always disabled
 
 #include <mutex>
 #define Q_lim_se 16

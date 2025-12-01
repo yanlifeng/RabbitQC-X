@@ -826,19 +826,15 @@ namespace rabbit {
 //            fprintf(stderr, "read1 %d %d\n", r, leftPart->size);
             if (!mFqReader->FinishRead()) {
                 if(isZipped) {
-#ifdef USE_CC_GZ
+                    // USE_CC_GZ is always enabled
                     cbufSize = r + leftPart->size;
                     chunkEnd = r;
-#else
-                    chunkEnd = cbufSize - GetNxtBuffSize;
-                    chunkEnd = GetNextRecordPos_(data, chunkEnd, cbufSize);
-#endif
                 } else {
                     chunkEnd = cbufSize - GetNxtBuffSize;
                     chunkEnd = GetNextRecordPos_(data, chunkEnd, cbufSize);
                 }
             } else {
-#ifdef USE_CC_GZ
+                // USE_CC_GZ is always enabled
                 if(isZipped) {
                     assert(r == 0);
                     leftPart->size = 1ll << 32;
@@ -850,13 +846,6 @@ namespace rabbit {
                     chunkEnd = leftPart->size + 1;
                     cbufSize = leftPart->size + 1;
                 }
-#else
-                leftPart->size += r - 1;
-                if (usesCrlf) leftPart->size -= 1;
-                eof1 = true;
-                chunkEnd = leftPart->size + 1;
-                cbufSize = leftPart->size + 1;
-#endif
             }
             //------read left chunk end------//
 
@@ -874,19 +863,15 @@ namespace rabbit {
 //            fprintf(stderr, "read2 %d %d\n", r, rightPart->size);
             if (!mFqReader2->FinishRead()) {
                 if(isZipped) {
-#ifdef USE_CC_GZ
+                    // USE_CC_GZ is always enabled
                     cbufSize_right = r + rightPart->size;
                     chunkEnd_right = r;
-#else
-                    chunkEnd_right = cbufSize_right - GetNxtBuffSize;
-                    chunkEnd_right = GetNextRecordPos_(data_right, chunkEnd_right, cbufSize_right);
-#endif
                 } else {
                     chunkEnd_right = cbufSize_right - GetNxtBuffSize;
                     chunkEnd_right = GetNextRecordPos_(data_right, chunkEnd_right, cbufSize_right);
                 }
             } else {
-#ifdef USE_CC_GZ
+                // USE_CC_GZ is always enabled
                 if(isZipped) {
                     assert(r == 0);
                     rightPart->size = 1ll << 32;
@@ -898,13 +883,6 @@ namespace rabbit {
                     chunkEnd_right = rightPart->size + 1;
                     cbufSize_right = rightPart->size + 1;
                 }
-#else
-                rightPart->size += r - 1;
-                if (usesCrlf) rightPart->size -= 1;
-                eof2 = true;
-                chunkEnd_right = rightPart->size + 1;
-                cbufSize_right = rightPart->size + 1;
-#endif
             }
             //--------------read right chunk end---------------------//
             if (eof1 && eof2) eof = true;
@@ -937,7 +915,7 @@ namespace rabbit {
 //                        chunkEnd_right--;
 //                    }
 //                }
-#ifdef USE_CC_GZ
+                // USE_CC_GZ is always enabled
                 if(isZipped) {
                     leftPart->size = chunkEnd;
                     rightPart->size = chunkEnd_right;
@@ -945,10 +923,6 @@ namespace rabbit {
                     leftPart->size = chunkEnd - 1;
                     rightPart->size = chunkEnd_right - 1;
                 }
-#else
-                leftPart->size = chunkEnd - 1;
-                rightPart->size = chunkEnd_right - 1;
-#endif
                 if (usesCrlf) leftPart->size -= 1;
                 std::copy(data + chunkEnd, data + cbufSize, swapBuffer.Pointer());
                 bufferSize = cbufSize - chunkEnd;
@@ -1160,13 +1134,8 @@ namespace rabbit {
                 cbufSize = r + chunk_->size;
                 uint64 chunkEnd = cbufSize;
                 if(isZipped) {
-#ifdef USE_CC_GZ
+                    // USE_CC_GZ is always enabled
                     chunk_->size = chunkEnd;
-#else
-                    chunkEnd = cbufSize - (cbufSize < GetNxtBuffSize ? cbufSize : GetNxtBuffSize);
-                    chunkEnd = GetNextRecordPos_(data, chunkEnd, cbufSize);
-                    chunk_->size = chunkEnd - 1;
-#endif
                 } else {
                     chunkEnd = cbufSize - (cbufSize < GetNxtBuffSize ? cbufSize : GetNxtBuffSize);
                     chunkEnd = GetNextRecordPos_(data, chunkEnd, cbufSize);
@@ -1176,17 +1145,13 @@ namespace rabbit {
                 std::copy(data + chunkEnd, data + cbufSize, swapBuffer.Pointer());
                 bufferSize = cbufSize - chunkEnd;
             } else {                  // at the end of file
-
-#ifdef USE_CC_GZ
+                // USE_CC_GZ is always enabled
                 if(isZipped) {
                     assert(r == 0);
                     chunk_->size = 1ll << 32;
                 } else {
                     chunk_->size += r - 1;// skip the last EOF symbol
                 }
-#else
-                chunk_->size += r - 1;// skip the last EOF symbol
-#endif
                 if (usesCrlf) chunk_->size -= 1;
                 mFqReader->setEof();
             }

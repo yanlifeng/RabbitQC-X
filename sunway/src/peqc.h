@@ -173,9 +173,8 @@ private:
     std::vector<std::pair<int, size_t>> out_gz_block_sizes1;
     std::vector<std::pair<int, size_t>> out_gz_block_sizes2;
 
-#ifdef USE_CC_GZ
+    // USE_CC_GZ is always enabled
     char* cc_gz_in_buffer[64];
-#endif
 };
 
 

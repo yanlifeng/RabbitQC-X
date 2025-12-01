@@ -96,13 +96,7 @@ SeQc::SeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
     in_is_zip_ = cmd_info1->in_file_name1_.find(".gz") != string::npos;
     out_is_zip_ = cmd_info1->out_file_name1_.find(".gz") != string::npos;
 
-    if(in_is_zip_ && comm_size > 1) {
-#ifdef USE_LIBDEFLATE
-#else
-        if(my_rank == 0) fprintf(stderr, "compress file input for multi-process is not support, please use -DUSE_LIBDEFLATE in makefile.\n");
-        exit(0);
-#endif
-    }
+    // USE_LIBDEFLATE is always enabled
     ifstream gFile;
     gFile.open(cmd_info1->in_file_name1_.c_str());
     gFile.seekg(0, ios_base::end);
@@ -110,11 +104,9 @@ SeQc::SeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
     gFile.close();
     int64_t start_pos, end_pos;
     if(in_is_zip_) {
-#ifdef USE_CC_GZ
         for(int i = 0; i < 64; i++) {
             cc_gz_in_buffer[i] = new char[BLOCK_SIZE];
         }
-#endif
         vector<size_t> block_sizes;
         if(use_swidx_file) {
             ifstream iff_idx;
@@ -172,7 +164,9 @@ SeQc::SeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
         if(end_pos > real_file_size) end_pos = real_file_size;
     }
     if(in_is_zip_) {
+#ifdef Verbose
         fprintf(stderr, "rank%d line: [%d %d]\n", my_rank, start_line_, end_line_);
+#endif
     }
 
     int64_t right_pos;
@@ -220,7 +214,9 @@ SeQc::SeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
     }
 
     start_pos_ = now_poss[my_rank];
+#ifdef Verbose
     if(my_rank == 0 && start_pos_ != 0) fprintf(stderr, "GG size division\n");
+#endif
     if(my_rank == comm_size - 1) end_pos_ = real_file_size;
     else end_pos_ = now_poss[my_rank + 1];
 
@@ -244,16 +240,12 @@ SeQc::SeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
             if (cmd_info1->use_pigz_) {
                 fprintf(stderr, "use pigz TODO...\n");
                 exit(0);
-#ifdef Verbose
-                printf("now use pigz to compress output data\n");
-#endif
             } else {
 #ifdef Verbose
-                printf("open gzip stream %s\n", cmd_info1->out_file_name1_.c_str());
+                fprintf(stderr, "open gzip stream %s\n", cmd_info1->out_file_name1_.c_str());
 #endif
 
-#ifdef USE_LIBDEFLATE
-
+                // USE_LIBDEFLATE is always enabled
                 ofstream file(cmd_info1->out_file_name1_.c_str());
 
                 if (file.is_open()) {
@@ -277,15 +269,10 @@ SeQc::SeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
                     MPI_Abort(MPI_COMM_WORLD, err);
                     exit(0);
                 }
-#else 
-                zip_out_stream = gzopen(cmd_info1->out_file_name1_.c_str(), "w");
-                gzsetparams(zip_out_stream, cmd_info1->compression_level_, Z_DEFAULT_STRATEGY);
-                gzbuffer(zip_out_stream, 1024 * 1024);
-#endif
             }
         } else {
 #ifdef Verbose
-            printf("open stream %s\n", cmd_info1->out_file_name1_.c_str());
+            fprintf(stderr, "open stream %s\n", cmd_info1->out_file_name1_.c_str());
 #endif
 
  
@@ -319,7 +306,9 @@ SeQc::SeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
 
 #else
             if(my_rank == 0) {
-                printf("pre real file size %lld\n", real_file_size);
+#ifdef Verbose
+                fprintf(stderr, "pre real file size %lld\n", real_file_size);
+#endif
                 int fd = open(cmd_info1->out_file_name1_.c_str(), O_CREAT | O_TRUNC | O_RDWR | O_EXCL, 0644);
                 ftruncate(fd, sizeof(char) * real_file_size);
                 out_stream_ = fdopen(fd, "w");
@@ -328,10 +317,14 @@ SeQc::SeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
                 do {
                     if(-1 == access(cmd_info1->out_file_name1_.c_str(), F_OK)) {
                         if(ENOENT == errno) {
+#ifdef Verbose
                             fprintf(stderr, "rank%d waiting file1\n");
+#endif
                             usleep(1000000);
                         } else {
+#ifdef Verbose
                             fprintf(stderr, "rank%d waiting file2\n");
+#endif
                             usleep(1000000);
                         }
                     } else {
@@ -374,11 +367,9 @@ SeQc::~SeQc() {
         delete[] out_queue_;
     }
     if(in_is_zip_) {
-#ifdef USE_CC_GZ
         for(int i = 0; i < 64; i++) {
             delete []cc_gz_in_buffer[i];
         }
-#endif
     }
 
     if (cmd_info_->state_duplicate_) {
@@ -473,13 +464,13 @@ void SeQc::ProducerSeFastqTask64(string file, rabbit::fq::FastqDataPool *fastq_d
         }
         t_sum3 += GetTime() - tt0;
     }
-    //printf("totsize %lld\n", tot_size);
-
+#ifdef Verbose
     fprintf(stderr, "producer%d sum1 cost %lf\n", my_rank, t_sum1);
     fprintf(stderr, "producer%d sum2 cost %lf [%lf %lf %lf]\n", my_rank, t_sum2, t_sum2_1, t_sum2_2, t_sum2_3);
     fprintf(stderr, "producer%d sum3 cost %lf\n", my_rank, t_sum3);
     fprintf(stderr, "producer %d cost %lf\n", my_rank, GetTime() - t0);
     fprintf(stderr, "producer %d done in func\n", my_rank);
+#endif
 }
 
 string SeQc::Read2String(neoReference &ref) {
@@ -645,11 +636,8 @@ void SeQc::ProcessFormatQCWrite(bool &allIsNull, vector <neoReference> *data, ve
     tt0 = GetTime();
     if (cmd_info_->write_data_) {
         long long now_pos_base = 0;
-        bool use_consumer_libdeflate = 0;
-
-#ifdef CONSUMER_USE_LIBDEFLATE
-        use_consumer_libdeflate = 1;
-#endif
+        bool use_consumer_libdeflate = 1;  // CONSUMER_USE_LIBDEFLATE is always enabled
+        
         if(!out_is_zip_ || use_consumer_libdeflate == 0) {
             int out_len = 0;
             for(int i = 0; i < 64; i++) {
@@ -739,7 +727,9 @@ void SeQc::ProcessFormatQCWrite(bool &allIsNull, vector <neoReference> *data, ve
 
     tt0 = GetTime();
     if(cmd_info_->splitWrite_ == 0 && !all_stop && isNull) {
+#ifdef Verbose
         fprintf(stderr, "consumer%d push null\n", my_rank);
+#endif
         vector<rabbit::fq::FastqDataChunk *> tmp_chunks;
         tmp_chunks.clear();
         while (p_queueNumNow >= p_queueSizeLim) {
@@ -859,8 +849,7 @@ void SeQc::ConsumerSeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
         for(int i = fqdatachunks.size(); i < 64; i++) {
             fqdatachunks.push_back(NULL);
         }
-#ifdef USE_CC_GZ
-#ifdef USE_LIBDEFLATE
+        // USE_CC_GZ and USE_LIBDEFLATE are always enabled
         if(in_is_zip_) {
             Para degz_paras[64];
             size_t out_size[64] = {0};
@@ -868,7 +857,6 @@ void SeQc::ConsumerSeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
                 if(fqdatachunks[i] == NULL) {
                     degz_paras[i].in_buffer = NULL;
                     degz_paras[i].in_size = 0;
-                    //fprintf(stderr, "in size %d\n", degz_paras[i].in_size);
                     continue;
                 }
                 memcpy(cc_gz_in_buffer[i], fqdatachunks[i]->data.Pointer(), fqdatachunks[i]->size);
@@ -876,7 +864,6 @@ void SeQc::ConsumerSeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
                 degz_paras[i].out_buffer = (char*)fqdatachunks[i]->data.Pointer();
                 degz_paras[i].in_size = fqdatachunks[i]->size;
                 degz_paras[i].out_size = &(out_size[i]);
-                //fprintf(stderr, "in size %d\n", degz_paras[i].in_size);
             }
 
             {
@@ -891,21 +878,15 @@ void SeQc::ConsumerSeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
                     if(out_size[i]) fqdatachunks[i]->size = out_size[i] - 1;
                     else fqdatachunks[i]->size = out_size[i];
                 }
-                //fprintf(stderr, "ccc decom size %d\n", out_size[i]);
             }
-
         }
-#endif
-#endif
         t_decom += GetTime() - tt0;
 
         tt0 = GetTime();
         ProcessFormatQCWrite(allIsNull, data, pass_data, pre_pass_data, fqdatachunks, pre_fqdatachunks, &para, fastq_data_pool);
         t_ngsfunc += GetTime() - tt0;
 
-        //fprintf(stderr, "rank%d pending write size %d\n", my_rank, writeInfos.size());
-#ifdef CONSUMER_USE_LIBDEFLATE
-
+        // CONSUMER_USE_LIBDEFLATE is always enabled
         tt0 = GetTime();
         if (cmd_info_->write_data_ && out_is_zip_) {
             Para paras[64];
@@ -979,8 +960,6 @@ void SeQc::ConsumerSeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
         }
         t_slave_gz += GetTime() - tt0;
         
-#endif
-        
         if (cmd_info_->write_data_) {
             tt0 = GetTime();
             assert(writeInfos.size() == 64);
@@ -1017,10 +996,8 @@ void SeQc::ConsumerSeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
         gather_and_sort_vectors_se(my_rank, comm_size, out_round, out_gz_block_sizes, 0);
     }
 
-    printf("comm gz block size cost %lf\n", GetTime() - tt0);
-
-
-
+#ifdef Verbose
+    fprintf(stderr, "comm gz block size cost %lf\n", GetTime() - tt0);
     fprintf(stderr, "consumer%d NGSnew tot cost %lf\n", my_rank, GetTime() - t0);
     fprintf(stderr, "consumer%d NGSnew wait producer cost %lf\n", my_rank, t_wait_producer);
     fprintf(stderr, "consumer%d NGSnew format cost %lf\n", my_rank, t_format);
@@ -1037,9 +1014,10 @@ void SeQc::ConsumerSeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
     fprintf(stderr, "consumer%d NGSnew gz slave sub cost [%lf %lf %lf %lf %lf %lf %lf]\n", my_rank, t_slave_gz1, t_slave_gz2, t_slave_gz3_1, t_slave_gz3_2, t_slave_gz3_3, t_slave_gz4, t_slave_gz5);
     fprintf(stderr, "consumer%d NGSnew push to queue cost %lf\n", my_rank, t_push_q);
     fprintf(stderr, "consumer%d NGSnew copy data cost %lf\n", my_rank, t_copy_data);
+    fprintf(stderr, "consumer %d done in func\n", my_rank);
+#endif
     done_thread_number_++;
     athread_halt();
-    fprintf(stderr, "consumer %d done in func\n", my_rank);
 }
 
 
@@ -1065,7 +1043,9 @@ void SeQc::WriteSeFastqTask() {
         while (queueNumNow == 0) {
             if (done_thread_number_ == cmd_info_->thread_number_) {
                 overWhile = 1;
+#ifdef Verbose
                 fprintf(stderr, "writer rank %d writer while break\n", my_rank);
+#endif
                 break;
             }
             
@@ -1088,28 +1068,15 @@ void SeQc::WriteSeFastqTask() {
                 if(use_out_mem) {
                     memcpy(OutMemData, now.first, now.second.first);
                 } else {
-#ifdef USE_LIBDEFLATE
-
+                    // USE_LIBDEFLATE is always enabled
 #ifdef use_mpi_file
-
                     if(cmd_info_->splitWrite_ == 0) {
                         MPI_File_seek(fh, now.second.second, MPI_SEEK_SET);
                     }
                     MPI_File_write(fh, now.first, now.second.first, MPI_CHAR, &status);
-
-
 #else
                     fseek(out_stream_, now.second.second, SEEK_SET);
                     fwrite(now.first, sizeof(char), now.second.first, out_stream_);
-#endif
-
-
-#else
-                    int written = gzwrite(zip_out_stream, now.first, now.second.first);
-                    if (written != now.second.first) {
-                        printf("gzwrite error\n");
-                        exit(0);
-                    }
 #endif
                 }
 
@@ -1163,23 +1130,13 @@ void SeQc::WriteSeFastqTask() {
             fprintf(stderr, "use pigz TODO...\n");
             exit(0);
         } else {
-#ifdef USE_LIBDEFLATE
-
+            // USE_LIBDEFLATE is always enabled
 #ifdef use_mpi_file
             MPI_File_close(&fh);
 #else
             fclose(out_stream_);
             if(my_rank == 0) {
                 truncate(cmd_info_->out_file_name1_.c_str(), sizeof(char) * zip_now_pos_);
-            }
-#endif
-            //off_idx.close();
-
-#else
-            if (zip_out_stream) {
-                gzflush(zip_out_stream, Z_FINISH);
-                gzclose(zip_out_stream);
-                zip_out_stream = NULL;
             }
 #endif
         }
@@ -1211,12 +1168,14 @@ void SeQc::WriteSeFastqTask() {
         size_t vector_size = non_zero_block_info.size();
         ofs.write(reinterpret_cast<const char*>(&vector_size), sizeof(size_t));
         ofs.close();
-        printf("writer final cost %lf\n", GetTime() - tt0);
+#ifdef Verbose
+        fprintf(stderr, "writer final cost %lf\n", GetTime() - tt0);
+#endif
     }
 
 
 #ifdef Verbose
-    printf("writer wait queue cost %.4f\n", t_wait);
+    fprintf(stderr, "writer wait queue cost %.4f\n", t_wait);
     printf("writer gz slave cost %.4f\n", t_gz_slave);
     printf("writer write cost %.4f\n", t_write);
     printf("writer del cost %.4f\n", t_del);
@@ -1225,7 +1184,6 @@ void SeQc::WriteSeFastqTask() {
     fprintf(stderr, "writer %d cost %lf, tot size %lld\n", my_rank, GetTime() - t0, tot_size);
     printf("writer %d done in func\n", my_rank);
     //printf("write %d cost %.5f --- %lld\n", my_rank, GetTime() - t0, tot_size);
-
 #endif
 }
 
@@ -1358,25 +1316,27 @@ void SeQc::ProcessSeFastq() {
     thread consumer(bind(&SeQc::ConsumerSeFastqTask64, this, p_thread_info, fastqPool));
     if (cmd_info_->write_data_) {
         WriteSeFastqTask();
-        printf("write%d done\n", my_rank);
+#ifdef Verbose
+        fprintf(stderr, "write%d done\n", my_rank);
+#endif
     }
 
     consumer.join();
-    printf("consumer done\n");
+#ifdef Verbose
+    fprintf(stderr, "consumer done\n");
+#endif
 
     producer.join();
-    printf("producer done\n");
-
-    //if (cmd_info_->write_data_) {
-    //    write_thread->join();
-    //    writerDone = 1;
-    //}
-    printf("all pro write done1\n");
+#ifdef Verbose
+    fprintf(stderr, "producer done\n");
+#endif
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    printf("all pro write done2\n");
-    printf("TOT TIME1 %lf\n", GetTime() - ttt);
+#ifdef Verbose
+    fprintf(stderr, "all pro write done\n");
+    fprintf(stderr, "TOT TIME1 %lf\n", GetTime() - ttt);
+#endif
 
     double tt00 = GetTime();
 #ifdef Verbose
@@ -1410,7 +1370,9 @@ void SeQc::ProcessSeFastq() {
     pre_state_mpis.push_back(pre_state_tmp);
     vector<State *> aft_state_mpis;
     aft_state_mpis.push_back(aft_state_tmp);
-    printf("merge2 done\n");
+#ifdef Verbose
+    fprintf(stderr, "merge2 done\n");
+#endif
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -1435,7 +1397,9 @@ void SeQc::ProcessSeFastq() {
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
-    printf("pre merge done\n");
+#ifdef Verbose
+    fprintf(stderr, "pre merge done\n");
+#endif
 
     if(my_rank == 0) {
         for(int i = 1; i < comm_size; i++) {
@@ -1454,9 +1418,10 @@ void SeQc::ProcessSeFastq() {
         MPI_Send(aft_state_is.c_str(), now_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
     }
     MPI_Barrier(MPI_COMM_WORLD);
-    printf("aft merge done\n");
-
-    printf("TOT TIME3 %lf\n", GetTime() - ttt);
+#ifdef Verbose
+    fprintf(stderr, "aft merge done\n");
+    fprintf(stderr, "TOT TIME3 %lf\n", GetTime() - ttt);
+#endif
 
     if(my_rank) {
         delete pre_state_tmp;

@@ -171,7 +171,7 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
         fqdatachunk = fqFileReader->readNextChunk();
         if ((fqdatachunk == NULL) || (fqdatachunk != NULL && fqdatachunk->size == 1ll << 32)) break;
         if(isZipped) {
-#ifdef USE_CC_GZ
+            // USE_CC_GZ is always enabled
             char* in_buffer = new char[BLOCK_SIZE];
             size_t in_size = fqdatachunk->size;
             size_t out_size = -1;
@@ -184,10 +184,11 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
             }
             libdeflate_free_decompressor(decompressor);
             delete[] in_buffer;
+#ifdef Verbose
             fprintf(stderr, "pre orp in_size %d, out_size %d\n", in_size, out_size);
+#endif
             if(out_size) fqdatachunk->size = out_size - 1;
             else fqdatachunk->size = out_size;
-#endif
         }
         n_chunks++;
         vector<neoReference> data;
@@ -404,7 +405,7 @@ int Adapter::EvalMaxLen(string file_name) {
         fqdatachunk = fqFileReader->readNextChunk();
         if ((fqdatachunk == NULL) || (fqdatachunk != NULL && fqdatachunk->size == 1ll << 32)) break;
         if(isZipped) {
-#ifdef USE_CC_GZ
+            // USE_CC_GZ is always enabled
             char* in_buffer = new char[BLOCK_SIZE];
             size_t in_size = fqdatachunk->size;
             size_t out_size = -1;
@@ -417,10 +418,11 @@ int Adapter::EvalMaxLen(string file_name) {
             }
             libdeflate_free_decompressor(decompressor);
             delete[] in_buffer;
+#ifdef Verbose
             fprintf(stderr, "pre orp in_size %d, out_size %d\n", in_size, out_size);
+#endif
             if(out_size) fqdatachunk->size = out_size - 1;
             else fqdatachunk->size = out_size;
-#endif
         }
         n_chunks++;
         vector<neoReference> data;
