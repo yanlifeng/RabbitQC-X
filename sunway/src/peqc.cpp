@@ -1525,18 +1525,30 @@ void PeQc::WriteSeFastqTask12() {
     if(my_rank == 0 && out_is_zip_) {
         double tt0 = GetTime();
         ofstream ofs(cmd_info_->out_file_name1_, ios::binary | ios::app);
+        std::vector<std::pair<int, size_t>> non_zero_block_info1;
         for (const auto& pair : out_gz_block_sizes1) {
+            if (pair.second > 0) {
+                non_zero_block_info1.push_back(pair);
+            }
+        }
+        for (const auto& pair : non_zero_block_info1) {
             ofs.write(reinterpret_cast<const char*>(&pair.second), sizeof(size_t));
         }
-        size_t vector_size = out_gz_block_sizes1.size();
+        size_t vector_size = non_zero_block_info1.size();
         ofs.write(reinterpret_cast<const char*>(&vector_size), sizeof(size_t));
         ofs.close();
 
-        ofstream ofs2(cmd_info_->out_file_name2_, ios::binary | ios::app);
+        std::vector<std::pair<int, size_t>> non_zero_block_info2;
         for (const auto& pair : out_gz_block_sizes2) {
+            if (pair.second > 0) {
+                non_zero_block_info2.push_back(pair);
+            }
+        }
+        ofstream ofs2(cmd_info_->out_file_name2_, ios::binary | ios::app);
+        for (const auto& pair : non_zero_block_info2) {
             ofs2.write(reinterpret_cast<const char*>(&pair.second), sizeof(size_t));
         }
-        size_t vector_size2 = out_gz_block_sizes2.size();
+        size_t vector_size2 = non_zero_block_info2.size();
         ofs2.write(reinterpret_cast<const char*>(&vector_size2), sizeof(size_t));
         ofs2.close();
         printf("writer final cost %lf\n", GetTime() - tt0);

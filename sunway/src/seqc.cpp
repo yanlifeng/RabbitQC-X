@@ -1199,10 +1199,16 @@ void SeQc::WriteSeFastqTask() {
     if(my_rank == 0 && out_is_zip_) {
         tt0 = GetTime();
         ofstream ofs(cmd_info_->out_file_name1_, ios::binary | ios::app);
+        std::vector<std::pair<int, size_t>> non_zero_block_info;
         for (const auto& pair : out_gz_block_sizes) {
+            if (pair.second > 0) {
+                non_zero_block_info.push_back(pair);
+            }
+        }
+        for (const auto& pair : non_zero_block_info) {
             ofs.write(reinterpret_cast<const char*>(&pair.second), sizeof(size_t));
         }
-        size_t vector_size = out_gz_block_sizes.size();
+        size_t vector_size = non_zero_block_info.size();
         ofs.write(reinterpret_cast<const char*>(&vector_size), sizeof(size_t));
         ofs.close();
         printf("writer final cost %lf\n", GetTime() - tt0);
