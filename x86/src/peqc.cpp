@@ -48,15 +48,11 @@ PeQc::PeQc(CmdInfo *cmd_info1) {
                 out_name2 = out_name2.substr(0, out_name2.find(".gz"));
                 out_stream2_.open(out_name2);
                 out_stream2_.close();
-#ifdef Verbose
-                fprintf(stderr, "now use pigz to compress output data\n");
-#endif
+                debug_printf("now use pigz to compress output data\n");
 
             } else {
-#ifdef Verbose
-                fprintf(stderr, "open gzip stream1 %s\n", cmd_info1->out_file_name1_.c_str());
-                fprintf(stderr, "open gzip stream2 %s\n", cmd_info1->out_file_name2_.c_str());
-#endif
+                debug_printf("open gzip stream1 %s\n", cmd_info1->out_file_name1_.c_str());
+                debug_printf("open gzip stream2 %s\n", cmd_info1->out_file_name2_.c_str());
                 zip_out_stream1 = gzopen(cmd_info1->out_file_name1_.c_str(), "w");
                 gzsetparams(zip_out_stream1, cmd_info1->compression_level_, Z_DEFAULT_STRATEGY);
                 gzbuffer(zip_out_stream1, 1024 * 1024);
@@ -65,11 +61,9 @@ PeQc::PeQc(CmdInfo *cmd_info1) {
                 gzbuffer(zip_out_stream2, 1024 * 1024);
             }
         } else {
-#ifdef Verbose
-            fprintf(stderr, "open stream1 %s\n", cmd_info1->out_file_name1_.c_str());
+            debug_printf("open stream1 %s\n", cmd_info1->out_file_name1_.c_str());
             if (cmd_info_->interleaved_out_ == 0)
-                fprintf(stderr, "open stream2 %s\n", cmd_info1->out_file_name2_.c_str());
-#endif
+                debug_printf("open stream2 %s\n", cmd_info1->out_file_name2_.c_str());
             out_stream1_.open(cmd_info1->out_file_name1_);
             if (cmd_info_->interleaved_out_ == 0){
                 out_stream2_.open(cmd_info1->out_file_name2_);
@@ -335,9 +329,8 @@ void PeQc::Read2Chars(neoReference &ref, char *out_data, int &pos) {
 
 void PeQc::ProducerPeInterFastqTask(string file, rabbit::fq::FastqDataPool *fastq_data_pool,
         rabbit::core::TDataQueue<rabbit::fq::FastqDataChunk> &dq) {
-#ifdef Verbose
+    debug_printf("ProducerPeInterFastqTask started\n");
     double t0 = GetTime();
-#endif
     rabbit::fq::FastqFileReader *fqFileReader;
     rabbit::uint32 tmpSize = 1 << 20;
     if (cmd_info_->seq_len_ <= 200) tmpSize = 1 << 14;
@@ -353,18 +346,15 @@ void PeQc::ProducerPeInterFastqTask(string file, rabbit::fq::FastqDataPool *fast
 
     dq.SetCompleted();
     delete fqFileReader;
-#ifdef Verbose
     //cout << "file " << file << " has " << n_chunks << " chunks" << endl;
-    fprintf(stderr, "producer cost %.3f\n", GetTime() - t0);
-#endif
+    debug_printf("producer cost %.3f\n", GetTime() - t0);
 }
 
 
 void PeQc::ProducerPeFastqTask(string file, string file2, rabbit::fq::FastqDataPool *fastqPool,
         rabbit::core::TDataQueue<rabbit::fq::FastqDataPairChunk> &dq) {
-#ifdef Verbose
+    debug_printf("ProducerPeFastqTask started\n");
     double t0 = GetTime();
-#endif
     rabbit::fq::FastqFileReader *fqFileReader;
     rabbit::uint32 tmpSize = 1 << 20;
     if (cmd_info_->seq_len_ <= 200) tmpSize = 1 << 14;
@@ -422,10 +412,8 @@ void PeQc::ProducerPeFastqTask(string file, string file2, rabbit::fq::FastqDataP
 
     dq.SetCompleted();
     delete fqFileReader;
-#ifdef Verbose
     //cout << "file " << file << " has " << n_chunks << " chunks" << endl;
-    fprintf(stderr, "producer cost %.3f\n", GetTime() - t0);
-#endif
+    debug_printf("producer cost %.3f\n", GetTime() - t0);
 }
 
 /**
@@ -619,10 +607,8 @@ void PeQc::ConsumerPeFastqTask(ThreadInfo *thread_info, rabbit::fq::FastqDataPoo
                 }
 
                 mylock.lock();
-                while (queueNumNow1 >= queueSizeLim1) {
-#ifdef Verbose
-                    //fprintf(stderr, "waiting to push a chunk to out queue1\n");
-#endif
+                    while (queueNumNow1 >= queueSizeLim1) {
+                    //debug_printf("waiting to push a chunk to out queue1\n");
                     usleep(100);
                 }
                 out_queue1_[queue1P2++] = {out_data, pos};
@@ -651,9 +637,7 @@ void PeQc::ConsumerPeFastqTask(ThreadInfo *thread_info, rabbit::fq::FastqDataPoo
                     }
                     mylock.lock();
                     while (queueNumNow1 >= queueSizeLim1 || queueNumNow2 >= queueSizeLim2) {
-#ifdef Verbose
-                        //fprintf(stderr, "waiting to push a chunk to out queue1\n");
-#endif
+                        //debug_printf("waiting to push a chunk to out queue1\n");
                         usleep(100);
                     }
                     out_queue1_[queue1P2++] = {out_data1, out_len1};
@@ -817,10 +801,8 @@ void PeQc::ConsumerPeInterFastqTask(ThreadInfo *thread_info, rabbit::fq::FastqDa
                     Read2Chars(item2, out_data, pos);
                 }
                 mylock.lock();
-                while (queueNumNow1 >= queueSizeLim1) {
-#ifdef Verbose
-                    //fprintf(stderr, "waiting to push a chunk to out queue1\n");
-#endif
+                    while (queueNumNow1 >= queueSizeLim1) {
+                    //debug_printf("waiting to push a chunk to out queue1\n");
                     usleep(100);
                 }
                 out_queue1_[queue1P2++] = {out_data, pos};
@@ -843,9 +825,7 @@ void PeQc::ConsumerPeInterFastqTask(ThreadInfo *thread_info, rabbit::fq::FastqDa
 
                     mylock.lock();
                     while (queueNumNow1 >= queueSizeLim1 || queueNumNow2 >= queueSizeLim2) {
-#ifdef Verbose
-                        //fprintf(stderr, "waiting to push a chunk to out queue1\n");
-#endif
+                        //debug_printf("waiting to push a chunk to out queue1\n");
                         usleep(100);
                     }
                     out_queue1_[queue1P2++] = {out_data1, out_len1};
@@ -867,9 +847,8 @@ void PeQc::ConsumerPeInterFastqTask(ThreadInfo *thread_info, rabbit::fq::FastqDa
  * @brief a function to write pe data from out_data1 queue to file1
  */
 void PeQc::WriteSeFastqTask1() {
-#ifdef Verbose
+    debug_printf("WriteSeFastqTask1 started\n");
     double t0 = GetTime();
-#endif
     int cnt = 0;
     bool overWhile = 0;
     pair<char *, int> now;
@@ -887,10 +866,7 @@ void PeQc::WriteSeFastqTask1() {
         if (out_is_zip_) {
             if (cmd_info_->use_pigz_) {
                 while (pigzQueueNumNow1 > pigzQueueSizeLim1) {
-
-#ifdef Verbose
-                    //fprintf(stderr, "waiting to push a chunk to pigz queue1\n");
-#endif
+                    //debug_printf("waiting to push a chunk to pigz queue1\n");
                     usleep(100);
                 }
                 pigzQueue1->enqueue(now);
@@ -922,18 +898,15 @@ void PeQc::WriteSeFastqTask1() {
     } else {
         out_stream1_.close();
     }
-#ifdef Verbose
-    fprintf(stderr, "write1 cost %.5f\n", GetTime() - t0);
-#endif
+    debug_printf("write1 cost %.5f\n", GetTime() - t0);
 }
 
 /**
  * @brief a function to write pe data from out_data2 queue to file2
  */
 void PeQc::WriteSeFastqTask2() {
-#ifdef Verbose
+    debug_printf("WriteSeFastqTask2 started\n");
     double t0 = GetTime();
-#endif
     int cnt = 0;
     bool overWhile = 0;
     pair<char *, int> now;
@@ -951,10 +924,7 @@ void PeQc::WriteSeFastqTask2() {
         if (out_is_zip_) {
             if (cmd_info_->use_pigz_) {
                 while (pigzQueueNumNow2 > pigzQueueSizeLim2) {
-
-#ifdef Verbose
-                    //fprintf(stderr, "waiting to push a chunk to pigz queue2\n");
-#endif
+                    //debug_printf("waiting to push a chunk to pigz queue2\n");
                     usleep(100);
                 }
                 pigzQueue2->enqueue(now);
@@ -989,42 +959,30 @@ void PeQc::WriteSeFastqTask2() {
     } else {
         out_stream2_.close();
     }
-#ifdef Verbose
-    fprintf(stderr, "write2 cost %.5f\n", GetTime() - t0);
-#endif
+    debug_printf("write2 cost %.5f\n", GetTime() - t0);
 }
 
 /*
 void PeQc::PugzTask1() {
-#ifdef Verbose
-    fprintf(stderr, "pugz1 start\n");
+    debug_printf("pugz1 start\n");
     double t0 = GetTime();
-#endif
     main_pugz(cmd_info_->in_file_name1_, cmd_info_->pugz_threads_, pugzQueue1, &producerDone);
     pugzDone1 = 1;
-#ifdef Verbose
-    fprintf(stderr, "pugz1 done, cost %.6f\n", GetTime() - t0);
-#endif
+    debug_printf("pugz1 done, cost %.6f\n", GetTime() - t0);
 }
 
 void PeQc::PugzTask2() {
-#ifdef Verbose
-    fprintf(stderr, "pugz2 start\n");
+    debug_printf("pugz2 start\n");
     double t0 = GetTime();
-#endif
     main_pugz(cmd_info_->in_file_name2_, cmd_info_->pugz_threads_, pugzQueue2, &producerDone);
     pugzDone2 = 1;
-#ifdef Verbose
-    fprintf(stderr, "pugz2 done, cost %.6f\n", GetTime() - t0);
-#endif
+    debug_printf("pugz2 done, cost %.6f\n", GetTime() - t0);
 }
 */
 
 void PeQc::PugzTask1() {
-#ifdef Verbose
-    fprintf(stderr, "pragzip1 start\n");
+    debug_printf("pragzip1 start\n");
     double t0 = GetTime();
-#endif
  
     int cnt = 6;
 
@@ -1046,16 +1004,12 @@ void PeQc::PugzTask1() {
     main_pragzip(cnt, infos, pugzQueue1, &producerDone);
 
     pugzDone1 = 1;
-#ifdef Verbose
-    fprintf(stderr, "pragzip1 done, cost %.6f\n", GetTime() - t0);
-#endif
+    debug_printf("pragzip1 done, cost %.6f\n", GetTime() - t0);
 }
 
 void PeQc::PugzTask2() {
-#ifdef Verbose
-    fprintf(stderr, "pragzip2 start\n");
+    debug_printf("pragzip2 start\n");
     double t0 = GetTime();
-#endif
 
     int cnt = 6;
 
@@ -1077,9 +1031,7 @@ void PeQc::PugzTask2() {
     main_pragzip(cnt, infos, pugzQueue2, &producerDone);
 
     pugzDone2 = 1;
-#ifdef Verbose
-    fprintf(stderr, "pragzip2 done, cost %.6f\n", GetTime() - t0);
-#endif
+    debug_printf("pragzip2 done, cost %.6f\n", GetTime() - t0);
 }
 
 
@@ -1119,9 +1071,7 @@ void PeQc::PigzTask1() {
     infos[8][out_file.length()] = '\0';
     infos[9] = "-v";
     main_pigz(cnt, infos, pigzQueue1, &writerDone1, pigzLast1, &pigzQueueNumNow1);
-#ifdef Verbose
-    fprintf(stderr, "pigz1 done\n");
-#endif
+    debug_printf("pigz1 done\n");
 }
 
 void PeQc::PigzTask2() {
@@ -1160,9 +1110,7 @@ void PeQc::PigzTask2() {
     infos[8][out_file.length()] = '\0';
     infos[9] = "-v";
     main_pigz(cnt, infos, pigzQueue2, &writerDone2, pigzLast2, &pigzQueueNumNow2);
-#ifdef Verbose
-    fprintf(stderr, "pigz2 done\n");
-#endif
+    debug_printf("pigz2 done\n");
 }
 
 /**
@@ -1201,10 +1149,8 @@ void PeQc::ProcessPeFastq() {
             if (cmd_info_->interleaved_out_ == 0)
                 write_thread2->join();
         }
-#ifdef Verbose
-        fprintf(stderr, "all thrad done\n");
-        fprintf(stderr, "now merge thread info\n");
-#endif
+        debug_printf("all thread done\n");
+        debug_printf("now merge thread info\n");
         vector<State *> pre_vec_state1;
         vector<State *> pre_vec_state2;
         vector<State *> aft_vec_state1;
@@ -1221,9 +1167,7 @@ void PeQc::ProcessPeFastq() {
         auto aft_state1 = State::MergeStates(aft_vec_state1);
         auto aft_state2 = State::MergeStates(aft_vec_state2);
 
-#ifdef Verbose
-        fprintf(stderr, "merge done\n");
-#endif
+        debug_printf("merge done\n");
         fprintf(stderr, "\nprint read1 (before filter) info :\n");
         State::PrintStates(pre_state1);
         fprintf(stderr, "\nprint read1 (after filter) info :\n");
@@ -1363,9 +1307,7 @@ void PeQc::ProcessPeFastq() {
         Repoter::ReportHtmlPe(srr_name1 + "_" + srr_name2 + "_RabbitQCPlus.html", pre_state1, pre_state2, aft_state1,
                 aft_state2, cmd_info_->in_file_name1_,
                 cmd_info_->in_file_name2_, dupRate * 100.0, merge_insert_size);
-#ifdef Verbose
-        fprintf(stderr, "report done\n");
-#endif
+        debug_printf("report done\n");
 
         delete pre_state1;
         delete pre_state2;
@@ -1482,10 +1424,8 @@ void PeQc::ProcessPeFastq() {
             if (cmd_info_->interleaved_out_ == 0)
                 pigzer2->join();
         }
-#ifdef Verbose
-        fprintf(stderr, "all thrad done\n");
-        fprintf(stderr, "now merge thread info\n");
-#endif
+        debug_printf("all thread done\n");
+        debug_printf("now merge thread info\n");
         vector<State *> pre_vec_state1;
         vector<State *> pre_vec_state2;
         vector<State *> aft_vec_state1;
@@ -1501,12 +1441,10 @@ void PeQc::ProcessPeFastq() {
         auto pre_state2 = State::MergeStates(pre_vec_state2);
         auto aft_state1 = State::MergeStates(aft_vec_state1);
         auto aft_state2 = State::MergeStates(aft_vec_state2);
-#ifdef Verbose
         if (cmd_info_->do_overrepresentation_) {
-            fprintf(stderr, "orp cost %f\n", pre_state1->GetOrpCost() + pre_state2->GetOrpCost() + aft_state1->GetOrpCost() + aft_state2->GetOrpCost());
+            debug_printf("orp cost %f\n", pre_state1->GetOrpCost() + pre_state2->GetOrpCost() + aft_state1->GetOrpCost() + aft_state2->GetOrpCost());
         }
         fprintf(stderr, "merge done\n");
-#endif
         fprintf(stderr, "\nprint read1 (before filter) info :\n");
         State::PrintStates(pre_state1);
         fprintf(stderr, "\nprint read1 (after filter) info :\n");
@@ -1648,9 +1586,7 @@ void PeQc::ProcessPeFastq() {
 
         JsonReporter::ReportPe(srr_name1 + "_" + srr_name2 + "_RabbitQCPlus.json", pre_state1, pre_state2, aft_state1,
                                aft_state2, cmd_info_->in_file_name1_, cmd_info_->in_file_name2_, dupRate * 100.0, merge_insert_size);
-#ifdef Verbose
-        fprintf(stderr, "report done\n");
-#endif
+        debug_printf("report done\n");
         delete pre_state1;
         delete pre_state2;
         delete aft_state1;

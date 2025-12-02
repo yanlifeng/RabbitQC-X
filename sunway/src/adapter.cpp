@@ -141,9 +141,6 @@ struct preOverData{
 
 void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &eva_len) {
 
-#ifdef Verbose
-    double t0 = GetTime();
-#endif
     auto *fastq_data_pool = new rabbit::fq::FastqDataPool(4, 1 << 22);
     auto fqFileReader = new rabbit::fq::FastqFileReader(file_name, *fastq_data_pool, "",
             file_name.find(".gz") != string::npos);
@@ -184,9 +181,6 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
             }
             libdeflate_free_decompressor(decompressor);
             delete[] in_buffer;
-#ifdef Verbose
-            fprintf(stderr, "pre orp in_size %d, out_size %d\n", in_size, out_size);
-#endif
             if(out_size) fqdatachunk->size = out_size - 1;
             else fqdatachunk->size = out_size;
         }
@@ -204,11 +198,6 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
                 break;
         }
     }
-#ifdef Verbose
-    printf("pre orp read data cost %lf\n", GetTime() - t0);
-
-    t0 = GetTime();
-#endif
 
     int seqlen = 0;
     for (int i = 0; i < loadedReads.size(); i++) {
@@ -263,11 +252,6 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
             }
         }
     }
-#ifdef Verbose
-    printf("pre orp 222 cost %lf\n", GetTime() - t0);
-
-    t0 = GetTime();
-#endif
 
     vector<pair<string, int>> hot_s;
 
@@ -294,11 +278,6 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
             }
         }
     }
-#ifdef Verbose
-    printf("pre orp 333 cost %lf\n", GetTime() - t0);
-
-    t0 = GetTime();
-#endif
 
     athread_init();
     bool use_slave = 1;
@@ -352,11 +331,6 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
     }
 
     athread_halt();
-#ifdef Verbose
-    printf("pre orp 444 cost %lf\n", GetTime() - t0);
-
-    t0 = GetTime();
-#endif
     for (auto item: chunks)
         fastq_data_pool->Release(item);
     delete fastq_data_pool;
@@ -366,11 +340,6 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
     delete[] v;
     delete[] cnt;
     delete[] seqs;
-#ifdef Verbose
-    printf("pre orp del cost %lf\n", GetTime() - t0);
-#endif
-
-
 }
 
 
@@ -418,9 +387,6 @@ int Adapter::EvalMaxLen(string file_name) {
             }
             libdeflate_free_decompressor(decompressor);
             delete[] in_buffer;
-#ifdef Verbose
-            fprintf(stderr, "pre orp in_size %d, out_size %d\n", in_size, out_size);
-#endif
             if(out_size) fqdatachunk->size = out_size - 1;
             else fqdatachunk->size = out_size;
         }

@@ -505,17 +505,11 @@ void State::StateInfo(neoReference &ref) {
     qul_cnt_[int(1.0 * qul_tot / slen)]++;
     // do overrepresentation analysis for 1 of every 20 reads
     
-#ifdef Verbose
-    double t0 = GetTime();
-#endif
     if (do_over_represent_analyze_) {
         if (lines_ % over_representation_sampling_ == 0) {
             StateORP(ref);
         }
     }
-#ifdef Verbose
-    orpCost += GetTime() - t0;
-#endif
     lines_++;
 }
 

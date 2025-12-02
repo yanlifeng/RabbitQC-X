@@ -68,6 +68,13 @@ inline double GetTime() {
     return (double) tv.tv_sec + (double) tv.tv_usec / 1000000;
 }
 
+// Debug printf function that only prints when Verbose is defined
+#ifdef Verbose
+#define debug_printf(fmt, ...) fprintf(stderr, fmt, ##__VA_ARGS__)
+#else
+#define debug_printf(fmt, ...) ((void)0)
+#endif
+
 
 static int valAGCT[8] = {-1, 0, -1, 2, 1, -1, -1, 3};
 static int valAGCT2[8] = {-1, 1, -1, 3, 2, -1, 5, 4};

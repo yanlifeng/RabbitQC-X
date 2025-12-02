@@ -487,14 +487,12 @@ int main(int argc, char **argv) {
          cmd_info.thread_number_ = ceil(threads_rate * cmd_info.thread_number_);
     }
 
-#ifdef Verbose
-    fprintf(stderr, "t1, t2, t3 is %d %d %d\n", t1, t2, t3);
-    fprintf(stderr, " pugz is %d\n", cmd_info.use_pugz_);
-    fprintf(stderr, " pigz is %d\n", cmd_info.use_pigz_);
-    fprintf(stderr, " pugz threads are %d\n", cmd_info.pugz_threads_);
-    fprintf(stderr, " pigz threads are %d\n", cmd_info.pigz_threads_);
-    fprintf(stderr, " qc threads are %d\n", cmd_info.thread_number_);
-#endif
+    debug_printf("t1, t2, t3 is %d %d %d\n", t1, t2, t3);
+    debug_printf(" pugz is %d\n", cmd_info.use_pugz_);
+    debug_printf(" pigz is %d\n", cmd_info.use_pigz_);
+    debug_printf(" pugz threads are %d\n", cmd_info.pugz_threads_);
+    debug_printf(" pigz threads are %d\n", cmd_info.pigz_threads_);
+    debug_printf(" qc threads are %d\n", cmd_info.thread_number_);
 #endif
 
     if (cmd_info.isStdin_) {
@@ -759,15 +757,11 @@ int main(int argc, char **argv) {
             } else {
                 fprintf(stderr, "not find adapter in read2\n");
             }
-#ifdef Verbose
-            fprintf(stderr, "detect adapter cost %.5f\n", GetTime() - t2);
-#endif
+            debug_printf("detect adapter cost %.5f\n", GetTime() - t2);
         }
-#ifdef Verbose
         if (cmd_info.correct_data_) {
-            fprintf(stderr, "now correct data\n");
+            debug_printf("now correct data\n");
         }
-#endif
         if (cmd_info.trim_adapter_ || cmd_info.correct_data_ || !cmd_info.no_insert_size_) {
             cmd_info.analyze_overlap_ = true;
             fprintf(stderr, "for PE data, overlap analysis is used to find adapter by default\n");
@@ -792,9 +786,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "overrepresent preprocessing part done\n");
             fprintf(stderr, "read1 has %d hot sequence\n", cmd_info.hot_seqs_.size());
             fprintf(stderr, "read2 has %d hot sequence\n", cmd_info.hot_seqs2_.size());
-#ifdef Verbose
-            fprintf(stderr, "pre over representation cost %.5f\n", GetTime() - t2);
-#endif
+            debug_printf("pre over representation cost %.5f\n", GetTime() - t2);
         }
 
         if (cmd_info.interleaved_in_) {
@@ -838,9 +830,7 @@ int main(int argc, char **argv) {
             } else {
                 fprintf(stderr, "not find adapter\n");
             }
-#ifdef Verbose
-            fprintf(stderr, "detect adapter cost %.5f\n", GetTime() - t2);
-#endif
+            debug_printf("detect adapter cost %.5f\n", GetTime() - t2);
         }
         if (cmd_info.trim_front1_) {
             fprintf(stderr, "trim front %d bases\n", cmd_info.trim_front1_);
@@ -855,9 +845,7 @@ int main(int argc, char **argv) {
             Adapter::PreOverAnalyze(cmd_info.in_file_name1_, cmd_info.hot_seqs_, cmd_info.eva_len_);
             fprintf(stderr, "overrepresent preprocessing part done\n");
             fprintf(stderr, "total %d hot sqes\n", cmd_info.hot_seqs_.size());
-#ifdef Verbose
-            fprintf(stderr, "pre over representation cost %.5f\n", GetTime() - t2);
-#endif
+            debug_printf("pre over representation cost %.5f\n", GetTime() - t2);
         }
         if (cmd_info.adapter_seq1_.length() > 0)
             cmd_info.adapter_len_lim_ = min(cmd_info.adapter_len_lim_, int(cmd_info.adapter_seq1_.length()));

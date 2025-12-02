@@ -257,10 +257,8 @@ PeQc::PeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
                 fprintf(stderr, "use pigz TODO...\n");
                 exit(0);
             } else {
-#ifdef Verbose
-                printf("open gzip stream1 %s\n", cmd_info1->out_file_name1_.c_str());
-                printf("open gzip stream2 %s\n", cmd_info1->out_file_name2_.c_str());
-#endif
+                debug_printf("open gzip stream1 %s\n", cmd_info1->out_file_name1_.c_str());
+                debug_printf("open gzip stream2 %s\n", cmd_info1->out_file_name2_.c_str());
 
                 // USE_LIBDEFLATE is always enabled
                 ofstream file1(cmd_info1->out_file_name1_.c_str());
@@ -312,16 +310,12 @@ PeQc::PeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
                 }
             }
         } else {
-#ifdef Verbose
-            printf("open stream1 %s\n", cmd_info1->out_file_name1_.c_str());
+            debug_printf("open stream1 %s\n", cmd_info1->out_file_name1_.c_str());
             if (cmd_info_->interleaved_out_ == 0)
-                printf("open stream2 %s\n", cmd_info1->out_file_name2_.c_str());
-#endif
+                debug_printf("open stream2 %s\n", cmd_info1->out_file_name2_.c_str());
 
 
-
-#ifdef use_mpi_file
-
+            // use_mpi_file is always enabled
             ofstream file1(cmd_info1->out_file_name1_.c_str());
 
             if (file1.is_open()) {
@@ -347,7 +341,6 @@ PeQc::PeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
             }
 
             if (cmd_info_->interleaved_out_ == 0) {
-
                 ofstream file2(cmd_info1->out_file_name2_.c_str());
 
                 if (file2.is_open()) {
@@ -372,62 +365,6 @@ PeQc::PeQc(CmdInfo *cmd_info1, int my_rank_, int comm_size_) {
                     exit(0);
                 }               
             }
-
-
-#else
-            if(my_rank == 0) {
-                printf("pre real file1 size %lld\n", real_file_size);
-                int fd = open(cmd_info1->out_file_name1_.c_str(), O_CREAT | O_TRUNC | O_RDWR | O_EXCL, 0644);
-                ftruncate(fd, sizeof(char) * real_file_size);
-                out_stream1_ = fdopen(fd, "w");
-            } else {
-                int found = 0;
-                do {
-                    if(-1 == access(cmd_info1->out_file_name1_.c_str(), F_OK)) {
-                        if(ENOENT == errno) {
-                            //cerr << "waiting file be created..." << endl;
-                            usleep(10000);
-                        } else {
-                            //cerr << "file open GG" << endl;
-                            usleep(10000);
-                            //exit(0);
-                        }
-                    } else {
-                        out_stream1_ = fopen(cmd_info1->out_file_name1_.c_str(), "r+b");   
-                        found = 1;
-                    }
-                } while(found == 0);
-            }
-
-            if (cmd_info_->interleaved_out_ == 0){
-
-                if(my_rank == 0) {
-                    printf("pre real file2 size %lld\n", real_file_size2);
-                    int fd = open(cmd_info1->out_file_name2_.c_str(), O_CREAT | O_TRUNC | O_RDWR | O_EXCL, 0644);
-                    ftruncate(fd, sizeof(char) * real_file_size2);
-                    out_stream2_ = fdopen(fd, "w");
-                } else {
-                    int found = 0;
-                    do {
-
-                        if(-1 == access(cmd_info1->out_file_name2_.c_str(), F_OK)) {
-                            if(ENOENT == errno) {
-                                //cerr << "waiting file be created..." << endl;
-                                usleep(10000);
-                            } else {
-                                //cerr << "file open GG" << endl;
-                                usleep(10000);
-                                //exit(0);
-                            }
-                        } else {
-                            out_stream2_ = fopen(cmd_info1->out_file_name2_.c_str(), "r+b");   
-                            found = 1;
-                        }
-                    } while(found == 0);
-                }
-                //MPI_Barrier(MPI_COMM_WORLD);
-            }
-#endif
         }
     }
     duplicate_ = NULL;
@@ -1269,9 +1206,8 @@ void PeQc::ConsumerPeFastqTask64(ThreadInfo **thread_infos, rabbit::fq::FastqDat
  * @brief a function to write pe data from out_data1 queue to file1
  */
 void PeQc::WriteSeFastqTask12() {
-#ifdef Verbose
+    debug_printf("WriteSeFastqTask12 started\n");
     double t0 = GetTime();
-#endif
     int cnt = 0;
     long long tot_size1 = 0;
     long long tot_size2 = 0;
@@ -1319,7 +1255,7 @@ void PeQc::WriteSeFastqTask12() {
 
                 } else {
                     // USE_LIBDEFLATE is always enabled
-#ifdef use_mpi_file
+                    // use_mpi_file is always enabled
                     if(cmd_info_->splitWrite_ == 0) {
                         MPI_File_seek(fh1, now1.second.second, MPI_SEEK_SET);
                     }
@@ -1329,13 +1265,6 @@ void PeQc::WriteSeFastqTask12() {
                         MPI_File_seek(fh2, now2.second.second, MPI_SEEK_SET);
                     }
                     MPI_File_write(fh2, now2.first, now2.second.first, MPI_CHAR, &status2);
-#else
-                    fseek(out_stream1_, now1.second.second, SEEK_SET);
-                    fwrite(now1.first, sizeof(char), now1.second.first, out_stream1_);
-
-                    fseek(out_stream2_, now2.second.second, SEEK_SET);
-                    fwrite(now2.first, sizeof(char), now2.second.first, out_stream2_);
-#endif
                 }
 
                 t_write += GetTime() - tt0;
@@ -1353,20 +1282,11 @@ void PeQc::WriteSeFastqTask12() {
                 if(use_out_mem) {
                     memcpy(OutMemData1, now1.first, now1.second.first);
                 } else {
-#ifdef use_mpi_file
-                    //fprintf(stderr, "writer %d write seek\n", my_rank);
+                    // use_mpi_file is always enabled
                     if(cmd_info_->splitWrite_ == 0) {
                         MPI_File_seek(fh1, now1.second.second, MPI_SEEK_SET);
                     }
-                    //fprintf(stderr, "writer %d write ww\n", my_rank);
                     MPI_File_write(fh1, now1.first, now1.second.first, MPI_CHAR, &status1);
-                    //fprintf(stderr, "writer %d write ww done\n", my_rank);
-#else
-                    fseek(out_stream1_, now1.second.second, SEEK_SET);
-                    //fprintf(stderr, "rank %d write ww %lld\n", my_rank, now.second.first);
-                    fwrite(now1.first, sizeof(char), now1.second.first, out_stream1_);
-                    //fprintf(stderr, "rank %d write ww done\n", my_rank);
-#endif
                 }
                 t_write += GetTime() - tt0;
 
@@ -1383,21 +1303,11 @@ void PeQc::WriteSeFastqTask12() {
                 if(use_out_mem) {
                     memcpy(OutMemData2, now2.first, now2.second.first);
                 } else {
-
-#ifdef use_mpi_file
-                    //fprintf(stderr, "writer %d write seek\n", my_rank);
+                    // use_mpi_file is always enabled
                     if(cmd_info_->splitWrite_ == 0) {
                         MPI_File_seek(fh2, now2.second.second, MPI_SEEK_SET);
                     }
-                    //fprintf(stderr, "writer %d write ww\n", my_rank);
                     MPI_File_write(fh2, now2.first, now2.second.first, MPI_CHAR, &status2);
-                    //fprintf(stderr, "writer %d write ww done\n", my_rank);
-#else
-                    fseek(out_stream2_, now2.second.second, SEEK_SET);
-                    //fprintf(stderr, "rank %d write ww %lld\n", my_rank, now.second.first);
-                    fwrite(now2.first, sizeof(char), now2.second.first, out_stream2_);
-                    //fprintf(stderr, "rank %d write ww done\n", my_rank);
-#endif
                 }
                 t_write += GetTime() - tt0;
 
@@ -1420,35 +1330,15 @@ void PeQc::WriteSeFastqTask12() {
 
         } else {
             // USE_LIBDEFLATE is always enabled
-#ifdef use_mpi_file
+            // use_mpi_file is always enabled
             MPI_File_close(&fh1);
             MPI_File_close(&fh2);
-#else
-            fclose(out_stream1_);
-            if(my_rank == 0) {
-                truncate(cmd_info_->out_file_name1_.c_str(), sizeof(char) * zip_now_pos1_);
-            }
-            fclose(out_stream2_);
-            if(my_rank == 0) {
-                truncate(cmd_info_->out_file_name2_.c_str(), sizeof(char) * zip_now_pos2_);
-            }
-#endif
         }
 
     } else {
-#ifdef use_mpi_file
+        // use_mpi_file is always enabled
         MPI_File_close(&fh1);
         MPI_File_close(&fh2);
-#else
-        fclose(out_stream1_);
-        if(my_rank == 0) {
-            truncate(cmd_info_->out_file_name1_.c_str(), sizeof(char) * now_pos1_);
-        }
-        fclose(out_stream2_);
-        if(my_rank == 0) {
-            truncate(cmd_info_->out_file_name2_.c_str(), sizeof(char) * now_pos2_);
-        }
-#endif
     }
 
     if(my_rank == 0 && out_is_zip_) {
@@ -1483,208 +1373,15 @@ void PeQc::WriteSeFastqTask12() {
         printf("writer final cost %lf\n", GetTime() - tt0);
     }
 
-#ifdef Verbose
-    printf("writer wait queue cost %.4f\n", t_wait);
-    printf("writer gz slave cost %.4f\n", t_gz_slave);
-    printf("writer write cost %.4f\n", t_write);
-    printf("writer del cost %.4f\n", t_del);
-    printf("writer free cost %.4f\n", t_free);
-    printf("writer %d cost %lf, tot size %lld %lld\n", my_rank, GetTime() - t0, tot_size1, tot_size2);
-    fprintf(stderr, "writer %d in func done\n", my_rank);
-    //printf("write %d cost %.5f --- %lld\n", my_rank, GetTime() - t0, tot_size);
-    //
-#endif
+    debug_printf("writer wait queue cost %.4f\n", t_wait);
+    debug_printf("writer gz slave cost %.4f\n", t_gz_slave);
+    debug_printf("writer write cost %.4f\n", t_write);
+    debug_printf("writer del cost %.4f\n", t_del);
+    debug_printf("writer free cost %.4f\n", t_free);
+    debug_printf("writer %d cost %lf, tot size %lld %lld\n", my_rank, GetTime() - t0, tot_size1, tot_size2);
+    debug_printf("writer %d in func done\n", my_rank);
 }
 
-
-
-///**
-// * @brief a function to write pe data from out_data1 queue to file1
-// */
-//void PeQc::WriteSeFastqTask1() {
-//#ifdef Verbose
-//    double t0 = GetTime();
-//#endif
-//    int cnt = 0;
-//    long long tot_size = 0;
-//    bool overWhile = 0;
-//    CIPair now;
-//    while (true) {
-//        while (queueNumNow1 == 0) {
-//            if (done_thread_number_ == cmd_info_->thread_number_) {
-//                overWhile = 1;
-//                printf("rank %d write done\n", my_rank);
-//                break;
-//            }
-//
-//            //fprintf(stderr, "rank %d write wait\n", my_rank);
-//            usleep(1000);
-//        }
-//        if (overWhile) break;
-//        now = out_queue1_[queue1P1++];
-//        queueNumNow1--;
-//        //fprintf(stderr, "rank %d write get %p\n", my_rank, now.first);
-//        if (out_is_zip_) {
-//            if (cmd_info_->use_pigz_) {
-//                fprintf(stderr, "use pigz TODO...\n");
-//                exit(0);
-//            } else {
-//                int written = gzwrite(zip_out_stream1, now.first, now.second.first);
-//                if (written != now.second.first) {
-//                    printf("gzwrite error\n");
-//                    exit(0);
-//                }
-//                delete[] now.first;
-//            }
-//        } else {
-//            tot_size += now.second.first;
-//            if(now.second.first) {
-//
-//#ifdef use_mpi_file
-//                //fprintf(stderr, "rank %d write seek %lld\n", my_rank, now.second.first);
-//                MPI_File_seek(fh1, now.second.second, MPI_SEEK_SET);
-//                //fprintf(stderr, "rank %d write ww %lld\n", my_rank, now.second.first);
-//                MPI_File_write(fh1, now.first, now.second.first, MPI_CHAR, &status1);
-//                //fprintf(stderr, "rank %d write ww done\n", my_rank);
-//#else
-//                fseek(out_stream1_, now.second.second, SEEK_SET);
-//                //fprintf(stderr, "rank %d write ww %lld\n", my_rank, now.second.first);
-//                fwrite(now.first, sizeof(char), now.second.first, out_stream1_);
-//                //fprintf(stderr, "rank %d write ww done\n", my_rank);
-//#endif
-//                delete[] now.first;
-//                //fprintf(stderr, "rank %d write del done\n", my_rank);
-//            }
-//            //fprintf(stderr, "write%d %d done\n", my_rank, cnt++);
-//        }
-//    }
-//    //fprintf(stderr, "111111 rank%d donedone1\n", my_rank);
-//    MPI_Barrier(MPI_COMM_WORLD);
-//    //fprintf(stderr, "111111 rank%d donedone2\n", my_rank);
-//    if (out_is_zip_) {
-//        if (cmd_info_->use_pigz_) {
-//            fprintf(stderr, "use pigz TODO...\n");
-//            exit(0);
-//        } else {
-//            if (zip_out_stream1) {
-//                gzflush(zip_out_stream1, Z_FINISH);
-//                gzclose(zip_out_stream1);
-//                zip_out_stream1 = NULL;
-//            }
-//        }
-//
-//    } else {
-//#ifdef use_mpi_file
-//        //fprintf(stderr, "111111 rank%d donedone3\n", my_rank);
-//        MPI_File_close(&fh1);
-//        //fprintf(stderr, "111111 rank%d donedone4\n", my_rank);
-//#else
-//        fclose(out_stream1_);
-//        if(my_rank == 0) {
-//            truncate(cmd_info_->out_file_name1_.c_str(), sizeof(char) * now_pos1_);
-//        }
-//#endif
-//    }
-//#ifdef Verbose
-//    cerr << "write" << my_rank << " cost " << GetTime() - t0 << ", tot size " << tot_size << endl;
-//    //printf("write %d cost %.5f --- %lld\n", my_rank, GetTime() - t0, tot_size);
-//    //
-//#endif
-//}
-//
-///**
-// * @brief a function to write pe data from out_data2 queue to file2
-// */
-//void PeQc::WriteSeFastqTask2() {
-//#ifdef Verbose
-//    double t0 = GetTime();
-//#endif
-//    int cnt = 0;
-//    long long tot_size = 0;
-//    bool overWhile = 0;
-//    CIPair now;
-//    while (true) {
-//        while (queueNumNow2 == 0) {
-//            if (done_thread_number_ == cmd_info_->thread_number_) {
-//                overWhile = 1;
-//                printf("rank %d write done\n", my_rank);
-//                break;
-//            }
-//
-//            //fprintf(stderr, "rank %d write wait\n", my_rank);
-//            usleep(1000);
-//        }
-//        if (overWhile) break;
-//        now = out_queue2_[queue2P1++];
-//        queueNumNow2--;
-//        //fprintf(stderr, "rank %d write get %p\n", my_rank, now.first);
-//        if (out_is_zip_) {
-//            if (cmd_info_->use_pigz_) {
-//                fprintf(stderr, "use pigz TODO...\n");
-//                exit(0);
-//            } else {
-//                int written = gzwrite(zip_out_stream2, now.first, now.second.first);
-//                if (written != now.second.first) {
-//                    printf("gzwrite error\n");
-//                    exit(0);
-//                }
-//                delete[] now.first;
-//            }
-//        } else {
-//            tot_size += now.second.first;
-//            if(now.second.first) {
-//
-//#ifdef use_mpi_file
-//                //fprintf(stderr, "rank %d write seek %lld\n", my_rank, now.second.first);
-//                MPI_File_seek(fh2, now.second.second, MPI_SEEK_SET);
-//                //fprintf(stderr, "rank %d write ww %lld\n", my_rank, now.second.first);
-//                MPI_File_write(fh2, now.first, now.second.first, MPI_CHAR, &status2);
-//                //fprintf(stderr, "rank %d write ww done\n", my_rank);
-//#else
-//                fseek(out_stream2_, now.second.second, SEEK_SET);
-//                //fprintf(stderr, "rank %d write ww %lld\n", my_rank, now.second.first);
-//                fwrite(now.first, sizeof(char), now.second.first, out_stream2_);
-//                //fprintf(stderr, "rank %d write ww done\n", my_rank);
-//#endif
-//                delete[] now.first;
-//                //fprintf(stderr, "rank %d write del done\n", my_rank);
-//            }
-//            //fprintf(stderr, "write%d %d done\n", my_rank, cnt++);
-//        }
-//    }
-//    //fprintf(stderr, "222222 rank%d donedone1\n", my_rank);
-//    MPI_Barrier(MPI_COMM_WORLD);
-//    //fprintf(stderr, "222222 rank%d donedone2\n", my_rank);
-//    if (out_is_zip_) {
-//        if (cmd_info_->use_pigz_) {
-//            fprintf(stderr, "use pigz TODO...\n");
-//            exit(0);
-//        } else {
-//            if (zip_out_stream2) {
-//                gzflush(zip_out_stream2, Z_FINISH);
-//                gzclose(zip_out_stream2);
-//                zip_out_stream2 = NULL;
-//            }
-//        }
-//
-//    } else {
-//#ifdef use_mpi_file
-//        //fprintf(stderr, "222222 rank%d donedone3\n", my_rank);
-//        MPI_File_close(&fh2);
-//        //fprintf(stderr, "222222 rank%d donedone4\n", my_rank);
-//#else
-//        fclose(out_stream2_);
-//        if(my_rank == 0) {
-//            truncate(cmd_info_->out_file_name2_.c_str(), sizeof(char) * now_pos2_);
-//        }
-//#endif
-//    }
-//#ifdef Verbose
-//    cerr << "write" << my_rank << " cost " << GetTime() - t0 << ", tot size " << tot_size << endl;
-//    //printf("write %d cost %.5f --- %lld\n", my_rank, GetTime() - t0, tot_size);
-//    //
-//#endif
-//}
 
 
 bool checkStates(State* s1, State* s2) {
@@ -1819,10 +1516,8 @@ void PeQc::ProcessPeFastq() {
     printf("rank%d all pro done2\n", my_rank);
 
 
-#ifdef Verbose
-    printf("all thread done\n");
-    printf("now merge thread info\n");
-#endif
+    debug_printf("all thread done\n");
+    debug_printf("now merge thread info\n");
 
     printf("TOT TIME1 %lf\n", GetTime() - ttt);
 
@@ -1984,12 +1679,10 @@ void PeQc::ProcessPeFastq() {
     printf("merge2 cost %lf\n", GetTime() - tt00);
 
     tt00 = GetTime();
-#ifdef Verbose
     if (cmd_info_->do_overrepresentation_) {
-        printf("orp cost %f\n", pre_state1->GetOrpCost() + pre_state2->GetOrpCost() + aft_state1->GetOrpCost() + aft_state2->GetOrpCost());
+        debug_printf("orp cost %f\n", pre_state1->GetOrpCost() + pre_state2->GetOrpCost() + aft_state1->GetOrpCost() + aft_state2->GetOrpCost());
     }
-    printf("merge done\n");
-#endif
+    debug_printf("merge done\n");
     printf("\nprint read1 (before filter) info :\n");
     State::PrintStates(pre_state1);
     printf("\nprint read1 (after filter) info :\n");
@@ -2132,9 +1825,7 @@ void PeQc::ProcessPeFastq() {
     Repoter::ReportHtmlPe(srr_name1 + "_" + srr_name2 + "_SWQC.html", pre_state1, pre_state2, aft_state1,
             aft_state2, cmd_info_->in_file_name1_,
             cmd_info_->in_file_name2_, dupRate * 100.0, merge_insert_size);
-#ifdef Verbose
-    printf("report done\n");
-#endif
+    debug_printf("report done\n");
     printf("report cost %lf\n", GetTime() - tt00);
 
     if(use_in_mem) {

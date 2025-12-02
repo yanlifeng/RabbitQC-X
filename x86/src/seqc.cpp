@@ -32,21 +32,15 @@ SeQc::SeQc(CmdInfo *cmd_info1) {
                 out_name1 = out_name1.substr(0, out_name1.find(".gz"));
                 out_stream_.open(out_name1);
                 out_stream_.close();
-#ifdef Verbose
-                fprintf(stderr, "now use pigz to compress output data\n");
-#endif
+                debug_printf("now use pigz to compress output data\n");
             } else {
-#ifdef Verbose
-                fprintf(stderr, "open gzip stream %s\n", cmd_info1->out_file_name1_.c_str());
-#endif
+                debug_printf("open gzip stream %s\n", cmd_info1->out_file_name1_.c_str());
                 zip_out_stream = gzopen(cmd_info1->out_file_name1_.c_str(), "w");
                 gzsetparams(zip_out_stream, cmd_info1->compression_level_, Z_DEFAULT_STRATEGY);
                 gzbuffer(zip_out_stream, 1024 * 1024);
             }
         } else {
-#ifdef Verbose
-            fprintf(stderr, "open stream %s\n", cmd_info1->out_file_name1_.c_str());
-#endif
+            debug_printf("open stream %s\n", cmd_info1->out_file_name1_.c_str());
             out_stream_.open(cmd_info1->out_file_name1_);
         }
     }
@@ -453,9 +447,7 @@ void SeQc::ConsumerSeFastqTask(ThreadInfo *thread_info, rabbit::fq::FastqDataPoo
 
                     mylock.lock();
                     while (queueNumNow >= queueSizeLim) {
-#ifdef Verbose
-                        //fprintf(stderr, "waiting to push a chunk to out queue %d\n",out_len);
-#endif
+                        //debug_printf("waiting to push a chunk to out queue %d\n",out_len);
                         usleep(100);
                     }
                     
@@ -476,9 +468,8 @@ void SeQc::ConsumerSeFastqTask(ThreadInfo *thread_info, rabbit::fq::FastqDataPoo
  * @brief a function to write data from out_data queue to file
  */
 void SeQc::WriteSeFastqTask() {
-#ifdef Verbose
+    debug_printf("WriteSeFastqTask started\n");
     double t0 = GetTime();
-#endif
     int cnt = 0;
     bool overWhile = 0;
     pair<char *, int> now;
@@ -496,9 +487,7 @@ void SeQc::WriteSeFastqTask() {
         if (out_is_zip_) {
             if (cmd_info_->use_pigz_) {
                 while (pigzQueueNumNow > pigzQueueSizeLim) {
-#ifdef Verbose
-                    //fprintf(stderr, "waiting to push a chunk to pigz queue\n");
-#endif
+                    //debug_printf("waiting to push a chunk to pigz queue\n");
                     usleep(100);
                 }
                 pigzQueue->enqueue(now);
@@ -531,9 +520,7 @@ void SeQc::WriteSeFastqTask() {
     } else {
         out_stream_.close();
     }
-#ifdef Verbose
-    fprintf(stderr, "write cost %.5f\n", GetTime() - t0);
-#endif
+    debug_printf("write cost %.5f\n", GetTime() - t0);
 }
 
 
@@ -543,15 +530,11 @@ void SeQc::WriteSeFastqTask() {
 
 /*
 void SeQc::PugzTask() {
-#ifdef Verbose
-    fprintf(stderr, "pugz start\n");
+    debug_printf("pugz start\n");
     auto t0 = GetTime();
-#endif
     main_pugz(cmd_info_->in_file_name1_, cmd_info_->pugz_threads_, pugzQueue, &producerDone);
     //main_pragzip(cmd_info_->in_file_name1_, cmd_info_->pugz_threads_, pugzQueue, &producerDone);
-#ifdef Verbose
-    fprintf(stderr, "pugz cost %.5f\n", GetTime() - t0);
-#endif
+    debug_printf("pugz cost %.5f\n", GetTime() - t0);
     pugzDone = 1;
 }
 */
@@ -561,10 +544,8 @@ void SeQc::PugzTask() {
  */
 
 void SeQc::PugzTask() {
-#ifdef Verbose
-    fprintf(stderr, "pragzip start\n");
+    debug_printf("pragzip start\n");
     auto t0 = GetTime();
-#endif
     
     int cnt = 6;
 
@@ -585,9 +566,7 @@ void SeQc::PugzTask() {
 
     main_pragzip(cnt, infos, pugzQueue, &producerDone);
 
-#ifdef Verbose
-    fprintf(stderr, "pragzip cost %.5f\n", GetTime() - t0);
-#endif
+    debug_printf("pragzip cost %.5f\n", GetTime() - t0);
     pugzDone = 1;
 }
 
@@ -641,9 +620,7 @@ void SeQc::PigzTask() {
     memcpy(infos[8], out_file.c_str(), out_file.length());
     infos[8][out_file.length()] = '\0';
     main_pigz(cnt, infos, pigzQueue, &writerDone, pigzLast, &pigzQueueNumNow);
-#ifdef Verbose
-    fprintf(stderr, "pigz done\n");
-#endif
+    debug_printf("pigz done\n");
 }
 
 
@@ -652,9 +629,8 @@ void SeQc::PigzTask() {
  */
 
 void SeQc::ProcessSeFastq() {
-#ifdef Verbose
+    debug_printf("ProcessSeFastq started\n");
     double t0 = GetTime();
-#endif
     thread *carer;
     if(cmd_info_->do_correction_with_care_) {
         carer = new thread(bind(&SeQc::careProcess, this));
@@ -717,15 +693,11 @@ void SeQc::ProcessSeFastq() {
 
     producer.join();
 
-#ifdef Verbose
-    fprintf(stderr, "producer cost %.4f\n", GetTime() - t0);
-#endif
+    debug_printf("producer cost %.4f\n", GetTime() - t0);
     for (int t = 0; t < cmd_info_->thread_number_; t++) {
         threads[t]->join();
     }
-#ifdef Verbose
-    fprintf(stderr, "consumer cost %.4f\n", GetTime() - t0);
-#endif
+    debug_printf("consumer cost %.4f\n", GetTime() - t0);
     if (cmd_info_->write_data_) {
         write_thread->join();
         writerDone = 1;
@@ -733,10 +705,8 @@ void SeQc::ProcessSeFastq() {
     if (cmd_info_->use_pigz_) {
         pigzer->join();
     }
-#ifdef Verbose
-    fprintf(stderr, "all thrad done\n");
-    fprintf(stderr, "now merge thread info\n");
-#endif
+    debug_printf("all thread done\n");
+    debug_printf("now merge thread info\n");
     vector<State *> pre_vec_state;
     vector<State *> aft_vec_state;
 
@@ -746,12 +716,10 @@ void SeQc::ProcessSeFastq() {
     }
     auto pre_state = State::MergeStates(pre_vec_state);
     auto aft_state = State::MergeStates(aft_vec_state);
-#ifdef Verbose
     if (cmd_info_->do_overrepresentation_) {
-        fprintf(stderr, "orp cost %lf\n", pre_state->GetOrpCost() + aft_state->GetOrpCost());
+        debug_printf("orp cost %lf\n", pre_state->GetOrpCost() + aft_state->GetOrpCost());
     }
-    fprintf(stderr, "merge done\n");
-#endif
+    debug_printf("merge done\n");
     fprintf(stderr, "\nprint read (before filter) info :\n");
     State::PrintStates(pre_state);
     fprintf(stderr, "\nprint read (after filter) info :\n");
@@ -876,19 +844,15 @@ void SeQc::ProcessSeTGS() {
     for (int t = 0; t < cmd_info_->thread_number_; t++) {
         threads[t]->join();
     }
-#ifdef Verbose
-    fprintf(stderr, "all thrad done\n");
-    fprintf(stderr, "now merge thread info\n");
-#endif
+    debug_printf("all thread done\n");
+    debug_printf("now merge thread info\n");
     vector<TGSStats *> vec_state;
 
     for (int t = 0; t < cmd_info_->thread_number_; t++) {
         vec_state.push_back(p_thread_info[t]->TGS_state_);
     }
     auto mer_state = TGSStats::merge(vec_state);
-#ifdef Verbose
-    fprintf(stderr, "merge done\n");
-#endif
+    debug_printf("merge done\n");
     fprintf(stderr, "\nprint TGS state info :\n");
 
     //    report3(mer_state);
