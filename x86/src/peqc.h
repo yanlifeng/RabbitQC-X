@@ -141,6 +141,14 @@ private:
     int comm_size_;
     int64_t start_pos_;
     int64_t end_pos_;
+    
+    // MPI single file write members
+    MPI_Win mpi_win1_;
+    MPI_Win mpi_win2_;
+    long long *global_offset_ptr1_;
+    long long *global_offset_ptr2_;
+    MPI_File mpi_file1_;
+    MPI_File mpi_file2_;
 #endif
 };
 

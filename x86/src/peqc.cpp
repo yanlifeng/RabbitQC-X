@@ -60,6 +60,19 @@ PeQc::PeQc(CmdInfo *cmd_info1, int my_rank, int comm_size) {
     in_is_zip_ = cmd_info1->in_file_name1_.find(".gz") != string::npos;
     out_is_zip_ = cmd_info1->out_file_name1_.find(".gz") != string::npos;
 
+    // Check for unsupported MPI configurations
+    if (in_is_zip_) {
+        fprintf(stderr, "Error: MPI distributed reading does not support compressed (.gz) input files.\n");
+        fprintf(stderr, "Please use uncompressed FASTQ files for MPI mode.\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    
+    if (!cmd_info1->splitWrite_ && out_is_zip_) {
+        fprintf(stderr, "Error: MPI single file write mode does not support compressed (.gz) output.\n");
+        fprintf(stderr, "Please use --splitWrite for compressed output, or use uncompressed output for single file mode.\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
     // Check if both input files have the same size
     struct stat st1, st2;
     if (stat(cmd_info1->in_file_name1_.c_str(), &st1) != 0) {
@@ -142,9 +155,49 @@ PeQc::PeQc(CmdInfo *cmd_info1, int my_rank, int comm_size) {
     
     delete[] now_poss;
 
-    if (my_rank == 0) {
-        debug_printf("MPI PE file splitting: rank %d, start: %lld, end: %lld\n", 
-                     my_rank, start_pos_, end_pos_);
+    debug_printf("MPI PE file splitting: rank %d, start: %lld, end: %lld\n", 
+                 my_rank, start_pos_, end_pos_);
+
+    // Initialize MPI RMA windows for single file write mode
+    mpi_win1_ = MPI_WIN_NULL;
+    mpi_win2_ = MPI_WIN_NULL;
+    global_offset_ptr1_ = NULL;
+    global_offset_ptr2_ = NULL;
+    mpi_file1_ = MPI_FILE_NULL;
+    mpi_file2_ = MPI_FILE_NULL;
+    
+    if (!cmd_info1->splitWrite_ && cmd_info1->write_data_ && !out_is_zip_) {
+        // Allocate shared memory for global offset (only on rank 0)
+        MPI_Aint size = (my_rank == 0) ? sizeof(long long) : 0;
+        int disp_unit = sizeof(long long);
+        
+        // For file1
+        MPI_Win_allocate(size, disp_unit, MPI_INFO_NULL, MPI_COMM_WORLD, 
+                         &global_offset_ptr1_, &mpi_win1_);
+        if (my_rank == 0) {
+            *global_offset_ptr1_ = 0;
+        }
+        MPI_Win_lock_all(0, mpi_win1_);
+        MPI_Barrier(MPI_COMM_WORLD);
+        MPI_File_open(MPI_COMM_WORLD, cmd_info1->out_file_name1_.c_str(),
+                      MPI_MODE_CREATE | MPI_MODE_WRONLY,
+                      MPI_INFO_NULL, &mpi_file1_);
+        
+        // For file2 (if not interleaved output)
+        if (cmd_info1->interleaved_out_ == 0 && cmd_info1->out_file_name2_.length() > 0) {
+            MPI_Win_allocate(size, disp_unit, MPI_INFO_NULL, MPI_COMM_WORLD, 
+                             &global_offset_ptr2_, &mpi_win2_);
+            if (my_rank == 0) {
+                *global_offset_ptr2_ = 0;
+            }
+            MPI_Win_lock_all(0, mpi_win2_);
+            MPI_Barrier(MPI_COMM_WORLD);
+            MPI_File_open(MPI_COMM_WORLD, cmd_info1->out_file_name2_.c_str(),
+                          MPI_MODE_CREATE | MPI_MODE_WRONLY,
+                          MPI_INFO_NULL, &mpi_file2_);
+        }
+        
+        debug_printf("Rank %d: MPI PE single file write initialized\n", my_rank);
     }
 
     // Continue with common initialization
@@ -209,13 +262,20 @@ PeQc::PeQc(CmdInfo *cmd_info1) {
                 gzbuffer(zip_out_stream2, 1024 * 1024);
             }
         } else {
-            debug_printf("open stream1 %s\n", cmd_info1->out_file_name1_.c_str());
-            if (cmd_info_->interleaved_out_ == 0)
-                debug_printf("open stream2 %s\n", cmd_info1->out_file_name2_.c_str());
-            out_stream1_.open(cmd_info1->out_file_name1_);
-            if (cmd_info_->interleaved_out_ == 0){
-                out_stream2_.open(cmd_info1->out_file_name2_);
+#ifdef USE_MPI_IO
+            // Don't open regular file stream if using MPI single file mode
+            if (cmd_info1->splitWrite_) {
+#endif
+                debug_printf("open stream1 %s\n", cmd_info1->out_file_name1_.c_str());
+                if (cmd_info_->interleaved_out_ == 0)
+                    debug_printf("open stream2 %s\n", cmd_info1->out_file_name2_.c_str());
+                out_stream1_.open(cmd_info1->out_file_name1_);
+                if (cmd_info_->interleaved_out_ == 0){
+                    out_stream2_.open(cmd_info1->out_file_name2_);
+                }
+#ifdef USE_MPI_IO
             }
+#endif
         }
     }
     duplicate_ = NULL;
@@ -1022,25 +1082,45 @@ void PeQc::WriteSeFastqTask1() {
         if (overWhile) break;
         now = out_queue1_[queue1P1++];
         queueNumNow1--;
-        if (out_is_zip_) {
-            if (cmd_info_->use_pigz_) {
-                while (pigzQueueNumNow1 > pigzQueueSizeLim1) {
-                    //debug_printf("waiting to push a chunk to pigz queue1\n");
-                    usleep(100);
+        
+#ifdef USE_MPI_IO
+        if (!cmd_info_->splitWrite_ && !out_is_zip_) {
+            // MPI single file write mode
+            long long my_offset;
+            long long chunk_size = now.second;
+            
+            MPI_Fetch_and_op(&chunk_size, &my_offset, MPI_LONG_LONG, 
+                            0, 0, MPI_SUM, mpi_win1_);
+            MPI_Win_flush(0, mpi_win1_);
+            
+            MPI_Status status;
+            MPI_File_write_at(mpi_file1_, my_offset, now.first, now.second, 
+                             MPI_CHAR, &status);
+            
+            delete[] now.first;
+        } else
+#endif
+        {
+            if (out_is_zip_) {
+                if (cmd_info_->use_pigz_) {
+                    while (pigzQueueNumNow1 > pigzQueueSizeLim1) {
+                        //debug_printf("waiting to push a chunk to pigz queue1\n");
+                        usleep(100);
+                    }
+                    pigzQueue1->enqueue(now);
+                    pigzQueueNumNow1++;
+                } else {
+                    int written = gzwrite(zip_out_stream1, now.first, now.second);
+                    if (written != now.second) {
+                        fprintf(stderr, "gzwrite error\n");
+                        exit(0);
+                    }
+                    delete[] now.first;
                 }
-                pigzQueue1->enqueue(now);
-                pigzQueueNumNow1++;
             } else {
-                int written = gzwrite(zip_out_stream1, now.first, now.second);
-                if (written != now.second) {
-                    fprintf(stderr, "gzwrite error\n");
-                    exit(0);
-                }
+                out_stream1_.write(now.first, now.second);
                 delete[] now.first;
             }
-        } else {
-            out_stream1_.write(now.first, now.second);
-            delete[] now.first;
         }
     }
     if (out_is_zip_) {
@@ -1055,7 +1135,17 @@ void PeQc::WriteSeFastqTask1() {
         }
 
     } else {
-        out_stream1_.close();
+#ifdef USE_MPI_IO
+        if (!cmd_info_->splitWrite_ && mpi_file1_ != MPI_FILE_NULL) {
+            MPI_File_close(&mpi_file1_);
+            MPI_Win_unlock_all(mpi_win1_);
+            MPI_Win_free(&mpi_win1_);
+            debug_printf("Rank %d: MPI file1 closed\n", my_rank_);
+        } else
+#endif
+        {
+            out_stream1_.close();
+        }
     }
     debug_printf("write1 cost %.5f\n", GetTime() - t0);
 }
@@ -1080,27 +1170,46 @@ void PeQc::WriteSeFastqTask2() {
         if (overWhile) break;
         now = out_queue2_[queue2P1++];
         queueNumNow2--;
-        if (out_is_zip_) {
-            if (cmd_info_->use_pigz_) {
-                while (pigzQueueNumNow2 > pigzQueueSizeLim2) {
-                    //debug_printf("waiting to push a chunk to pigz queue2\n");
-                    usleep(100);
-                }
-                pigzQueue2->enqueue(now);
-                pigzQueueNumNow2++;
-            } else {
-                int written = gzwrite(zip_out_stream2, now.first, now.second);
-                if (written != now.second) {
-                    fprintf(stderr, "GG");
-                    exit(0);
-                }
+        
+#ifdef USE_MPI_IO
+        if (!cmd_info_->splitWrite_ && !out_is_zip_) {
+            // MPI single file write mode
+            long long my_offset;
+            long long chunk_size = now.second;
+            
+            MPI_Fetch_and_op(&chunk_size, &my_offset, MPI_LONG_LONG, 
+                            0, 0, MPI_SUM, mpi_win2_);
+            MPI_Win_flush(0, mpi_win2_);
+            
+            MPI_Status status;
+            MPI_File_write_at(mpi_file2_, my_offset, now.first, now.second, 
+                             MPI_CHAR, &status);
+            
+            delete[] now.first;
+        } else
+#endif
+        {
+            if (out_is_zip_) {
+                if (cmd_info_->use_pigz_) {
+                    while (pigzQueueNumNow2 > pigzQueueSizeLim2) {
+                        //debug_printf("waiting to push a chunk to pigz queue2\n");
+                        usleep(100);
+                    }
+                    pigzQueue2->enqueue(now);
+                    pigzQueueNumNow2++;
+                } else {
+                    int written = gzwrite(zip_out_stream2, now.first, now.second);
+                    if (written != now.second) {
+                        fprintf(stderr, "GG");
+                        exit(0);
+                    }
 
+                    delete[] now.first;
+                }
+            } else {
+                out_stream2_.write(now.first, now.second);
                 delete[] now.first;
             }
-        } else {
-
-            out_stream2_.write(now.first, now.second);
-            delete[] now.first;
         }
     }
 
@@ -1116,7 +1225,17 @@ void PeQc::WriteSeFastqTask2() {
         }
 
     } else {
-        out_stream2_.close();
+#ifdef USE_MPI_IO
+        if (!cmd_info_->splitWrite_ && mpi_file2_ != MPI_FILE_NULL) {
+            MPI_File_close(&mpi_file2_);
+            MPI_Win_unlock_all(mpi_win2_);
+            MPI_Win_free(&mpi_win2_);
+            debug_printf("Rank %d: MPI file2 closed\n", my_rank_);
+        } else
+#endif
+        {
+            out_stream2_.close();
+        }
     }
     debug_printf("write2 cost %.5f\n", GetTime() - t0);
 }

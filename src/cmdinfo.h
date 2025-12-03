@@ -32,9 +32,7 @@ public:
     bool notKeepOrder_;
 #endif
 
-#ifdef PLATFORM_SUNWAY
-    bool splitWrite_;
-#endif
+    bool splitWrite_;  // true: write split files (one per process), false: write single file (MPI-IO)
 
     bool overWrite_;
     bool write_data_;

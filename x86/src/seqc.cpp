@@ -59,6 +59,19 @@ SeQc::SeQc(CmdInfo *cmd_info1, int my_rank, int comm_size) {
     in_is_zip_ = cmd_info1->in_file_name1_.find(".gz") != string::npos;
     out_is_zip_ = cmd_info1->out_file_name1_.find(".gz") != string::npos;
 
+    // Check for unsupported MPI configurations
+    if (in_is_zip_) {
+        fprintf(stderr, "Error: MPI distributed reading does not support compressed (.gz) input files.\n");
+        fprintf(stderr, "Please use uncompressed FASTQ files for MPI mode.\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    
+    if (!cmd_info1->splitWrite_ && out_is_zip_) {
+        fprintf(stderr, "Error: MPI single file write mode does not support compressed (.gz) output.\n");
+        fprintf(stderr, "Please use --splitWrite for compressed output, or use uncompressed output for single file mode.\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
     // Get total file size
     struct stat st;
     if (stat(cmd_info1->in_file_name1_.c_str(), &st) != 0) {
@@ -134,6 +147,34 @@ SeQc::SeQc(CmdInfo *cmd_info1, int my_rank, int comm_size) {
                      my_rank, start_pos_, end_pos_);
     }
 
+    // Initialize MPI RMA window for single file write mode
+    mpi_win_ = MPI_WIN_NULL;
+    global_offset_ptr_ = NULL;
+    mpi_file_ = MPI_FILE_NULL;
+    
+    if (!cmd_info1->splitWrite_ && cmd_info1->write_data_ && !out_is_zip_) {
+        // Allocate shared memory for global offset (only on rank 0)
+        MPI_Aint size = (my_rank == 0) ? sizeof(long long) : 0;
+        int disp_unit = sizeof(long long);
+        MPI_Win_allocate(size, disp_unit, MPI_INFO_NULL, MPI_COMM_WORLD, 
+                         &global_offset_ptr_, &mpi_win_);
+        
+        if (my_rank == 0) {
+            *global_offset_ptr_ = 0;  // Initialize global offset to 0
+        }
+        
+        // Lock window for all processes
+        MPI_Win_lock_all(0, mpi_win_);
+        MPI_Barrier(MPI_COMM_WORLD);
+        
+        // Open MPI file for collective writing
+        MPI_File_open(MPI_COMM_WORLD, cmd_info1->out_file_name1_.c_str(),
+                      MPI_MODE_CREATE | MPI_MODE_WRONLY,
+                      MPI_INFO_NULL, &mpi_file_);
+        
+        debug_printf("Rank %d: MPI single file write initialized\n", my_rank);
+    }
+
     // Continue with common initialization
     int out_block_nums = int(1.0 * cmd_info1->in_file_size1_ / cmd_info1->out_block_size_);
     out_queue_ = NULL;
@@ -171,8 +212,15 @@ SeQc::SeQc(CmdInfo *cmd_info1) {
                 gzbuffer(zip_out_stream, 1024 * 1024);
             }
         } else {
-            debug_printf("open stream %s\n", cmd_info1->out_file_name1_.c_str());
-            out_stream_.open(cmd_info1->out_file_name1_);
+#ifdef USE_MPI_IO
+            // Don't open regular file stream if using MPI single file mode
+            if (cmd_info1->splitWrite_) {
+#endif
+                debug_printf("open stream %s\n", cmd_info1->out_file_name1_.c_str());
+                out_stream_.open(cmd_info1->out_file_name1_);
+#ifdef USE_MPI_IO
+            }
+#endif
         }
     }
     duplicate_ = NULL;
@@ -623,25 +671,47 @@ void SeQc::WriteSeFastqTask() {
         if (overWhile) break;
         now = out_queue_[queueP1++];
         queueNumNow--;
-        if (out_is_zip_) {
-            if (cmd_info_->use_pigz_) {
-                while (pigzQueueNumNow > pigzQueueSizeLim) {
-                    //debug_printf("waiting to push a chunk to pigz queue\n");
-                    usleep(100);
+        
+#ifdef USE_MPI_IO
+        if (!cmd_info_->splitWrite_ && !out_is_zip_) {
+            // MPI single file write mode: use atomic RMA + MPI-IO
+            long long my_offset;
+            long long chunk_size = now.second;
+            
+            // Atomic fetch_and_add to get unique offset
+            MPI_Fetch_and_op(&chunk_size, &my_offset, MPI_LONG_LONG, 
+                            0, 0, MPI_SUM, mpi_win_);
+            MPI_Win_flush(0, mpi_win_);
+            
+            // Write to file at the obtained offset
+            MPI_Status status;
+            MPI_File_write_at(mpi_file_, my_offset, now.first, now.second, 
+                             MPI_CHAR, &status);
+            
+            delete[] now.first;
+        } else
+#endif
+        {
+            if (out_is_zip_) {
+                if (cmd_info_->use_pigz_) {
+                    while (pigzQueueNumNow > pigzQueueSizeLim) {
+                        //debug_printf("waiting to push a chunk to pigz queue\n");
+                        usleep(100);
+                    }
+                    pigzQueue->enqueue(now);
+                    pigzQueueNumNow++;
+                } else {
+                    int written = gzwrite(zip_out_stream, now.first, now.second);
+                    if (written != now.second) {
+                        fprintf(stderr, "gzwrite error\n");
+                        exit(0);
+                    }
+                    delete[] now.first;
                 }
-                pigzQueue->enqueue(now);
-                pigzQueueNumNow++;
             } else {
-                int written = gzwrite(zip_out_stream, now.first, now.second);
-                if (written != now.second) {
-                    fprintf(stderr, "gzwrite error\n");
-                    exit(0);
-                }
+                out_stream_.write(now.first, now.second);
                 delete[] now.first;
             }
-        } else {
-            out_stream_.write(now.first, now.second);
-            delete[] now.first;
         }
     }
 
@@ -657,7 +727,18 @@ void SeQc::WriteSeFastqTask() {
             }
         }
     } else {
-        out_stream_.close();
+#ifdef USE_MPI_IO
+        if (!cmd_info_->splitWrite_ && mpi_file_ != MPI_FILE_NULL) {
+            // Close MPI file and free window
+            MPI_File_close(&mpi_file_);
+            MPI_Win_unlock_all(mpi_win_);
+            MPI_Win_free(&mpi_win_);
+            debug_printf("Rank %d: MPI single file write closed\n", my_rank_);
+        } else
+#endif
+        {
+            out_stream_.close();
+        }
     }
     debug_printf("write cost %.5f\n", GetTime() - t0);
 }

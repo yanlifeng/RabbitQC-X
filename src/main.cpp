@@ -84,6 +84,10 @@ int main(int argc, char **argv) {
     app.add_flag("--splitWrite", cmd_info.splitWrite_, "write split file when using multi-nodes.");
 #endif
 
+#ifdef USE_MPI_IO
+    app.add_flag("--splitWrite", cmd_info.splitWrite_, "write split files (one per process). If not set, uses MPI-IO to write single file (all processes write to one file).");
+#endif
+
     app.add_flag("--overWrite", cmd_info.overWrite_, "overwrite out file if already exists.");
     app.add_flag("--phred64", cmd_info.isPhred64_, "input is using phred64 scoring, default is phred33");
     app.add_flag("--stdin", cmd_info.isStdin_,
@@ -276,14 +280,18 @@ int main(int argc, char **argv) {
 
 #ifdef PLATFORM_X86
   #ifdef USE_MPI_IO
-    // Add split prefix to output filenames for MPI mode
-    if(cmd_info.out_file_name1_.length() > 0) {
-        cmd_info.out_file_name1_ = "split_" + to_string(my_rank) + "_" + cmd_info.out_file_name1_;
-        fprintf(stderr, "MPI mode: output file 1: %s\n", cmd_info.out_file_name1_.c_str());
-    }
-    if(cmd_info.out_file_name2_.length() > 0) {
-        cmd_info.out_file_name2_ = "split_" + to_string(my_rank) + "_" + cmd_info.out_file_name2_;
-        fprintf(stderr, "MPI mode: output file 2: %s\n", cmd_info.out_file_name2_.c_str());
+    // Add split prefix to output filenames for split write mode
+    if(cmd_info.splitWrite_) {
+        if(cmd_info.out_file_name1_.length() > 0) {
+            cmd_info.out_file_name1_ = "split_" + to_string(my_rank) + "_" + cmd_info.out_file_name1_;
+            fprintf(stderr, "MPI split write mode: output file 1: %s\n", cmd_info.out_file_name1_.c_str());
+        }
+        if(cmd_info.out_file_name2_.length() > 0) {
+            cmd_info.out_file_name2_ = "split_" + to_string(my_rank) + "_" + cmd_info.out_file_name2_;
+            fprintf(stderr, "MPI split write mode: output file 2: %s\n", cmd_info.out_file_name2_.c_str());
+        }
+    } else {
+        fprintf(stderr, "MPI single file write mode enabled (rank %d)\n", my_rank);
     }
   #endif
 #endif

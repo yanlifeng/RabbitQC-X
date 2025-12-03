@@ -35,6 +35,7 @@ CmdInfo::CmdInfo() {
 
     use_igzip_ = 0;
 
+    splitWrite_ = false;
     write_data_ = false;
     in_file_size1_ = 0;
     in_file_size2_ = 0;
