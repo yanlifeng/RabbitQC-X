@@ -125,9 +125,6 @@ string Adapter::matchKnownAdapter(string seq) {
 
 void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &eva_len) {
 
-#ifdef Verbose
-    double t0 = GetTime();
-#endif
     auto *fastq_data_pool = new rabbit::fq::FastqDataPool(128, 1 << 22);
     auto fqFileReader = new rabbit::fq::FastqFileReader(file_name, *fastq_data_pool, "",
             file_name.find(".gz") != string::npos);
@@ -165,9 +162,6 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
                 break;
         }
     }
-#ifdef Verbose
-    t0 = GetTime();
-#endif
 
     int seqlen = 0;
     for (int i = 0; i < loadedReads.size(); i++) {
@@ -224,9 +218,6 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
             }
         }
     }
-#ifdef Verbose
-    t0 = GetTime();
-#endif
 
     vector<pair<string, int>> hot_s;
 
@@ -254,9 +245,6 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
         }
     }
 
-#ifdef Verbose
-    t0 = GetTime();
-#endif
     // remove substrings
 #pragma omp parallel for num_threads(threadNumber)
     for (int i = 0; i < hot_s.size(); i++) {
@@ -279,12 +267,6 @@ void Adapter::PreOverAnalyze(string file_name, vector<string> &hot_seqs, int &ev
             }
         }
     }
-#ifdef Verbose
-    t0 = GetTime();
-#endif
-#ifdef Verbose
-    t0 = GetTime();
-#endif
     for (auto item: chunks)
         fastq_data_pool->Release(item);
     delete fastq_data_pool;

@@ -768,6 +768,11 @@ namespace rabbit {
   */
 
         FastqDataPairChunk *FastqFileReader::readNextPairChunk() {
+#ifdef USE_MPI_IO
+            if (file_end_pos_ > 0 && current_file_pos_ >= file_end_pos_ && bufferSize == 0 && bufferSize2 == 0) {
+                return NULL;
+            }
+#endif
             bool eof1 = false;
             bool eof2 = false;
             FastqDataPairChunk *pair = new FastqDataPairChunk;
@@ -806,6 +811,15 @@ namespace rabbit {
             }
             int64 r;
             r = mFqReader->Read(data + leftPart->size, toRead);
+#ifdef USE_MPI_IO
+            if (file_end_pos_ > 0) {
+                int64 max_allowed = file_end_pos_ - current_file_pos_;
+                if (r > max_allowed) {
+                    r = max_allowed;
+                }
+            }
+            current_file_pos_ += r;
+#endif
             if (r > 0) {
                 if (r == toRead) {
                     chunkEnd = cbufSize - GetNxtBuffSize;
@@ -838,7 +852,18 @@ namespace rabbit {
                 rightPart->size = bufferSize2;
                 bufferSize2 = 0;
             }
-            r = mFqReader2->Read(data_right + rightPart->size, toRead);
+            int64 r2 = mFqReader2->Read(data_right + rightPart->size, toRead);
+#ifdef USE_MPI_IO
+            // Adjust read size based on file range limit after reading (same as left file)
+            if (file_end_pos_ > 0) {
+                int64 max_allowed = file_end_pos_ - (current_file_pos_ - r);  // current_file_pos_ already updated by left read
+                if (r2 > max_allowed) {
+                    r2 = max_allowed;
+                }
+            }
+            // Note: don't update current_file_pos_ again for right file since files are synchronized
+#endif
+            r = r2;
             if (r > 0) {
                 if (r == toRead) {
                     chunkEnd_right = cbufSize_right - GetNxtBuffSize;
@@ -861,7 +886,13 @@ namespace rabbit {
             }
             //--------------read right chunk end---------------------//
             if (eof1 && eof2) eof = true;
-            if (!eof) {
+#ifdef USE_MPI_IO
+            // Check if we should also consider MPI range end as eof
+            if (file_end_pos_ > 0 && current_file_pos_ >= file_end_pos_) {
+                eof = true;
+            }
+#endif
+            if (!eof && toRead > 0) {
                 left_line_count = count_line(data, chunkEnd);
                 right_line_count = count_line(data_right, chunkEnd_right);
                 int64 difference = left_line_count - right_line_count;
@@ -907,6 +938,11 @@ namespace rabbit {
                                            moodycamel::ReaderWriterQueue<std::pair<char *, int>> *q2,
                                            std::atomic_int *d1, std::atomic_int *d2,
                                            std::pair<char *, int> &last1, std::pair<char *, int> &last2) {
+#ifdef USE_MPI_IO
+            if (file_end_pos_ > 0 && current_file_pos_ >= file_end_pos_ && bufferSize == 0 && bufferSize2 == 0) {
+                return NULL;
+            }
+#endif
             bool eof1 = false;
             bool eof2 = false;
             FastqDataPairChunk *pair = new FastqDataPairChunk;
@@ -945,6 +981,16 @@ namespace rabbit {
             }
             int64 r;
             r = mFqReader->Read(data + leftPart->size, toRead, q1, d1, last1, 0);
+#ifdef USE_MPI_IO
+            // Adjust read size based on file range limit after reading
+            if (file_end_pos_ > 0) {
+                int64 max_allowed = file_end_pos_ - current_file_pos_;
+                if (r > max_allowed) {
+                    r = max_allowed;
+                }
+            }
+            current_file_pos_ += r;
+#endif
             if (r > 0) {
                 if (r == toRead) {
                     chunkEnd = cbufSize - GetNxtBuffSize;
@@ -974,7 +1020,18 @@ namespace rabbit {
                 rightPart->size = bufferSize2;
                 bufferSize2 = 0;
             }
-            r = mFqReader2->Read(data_right + rightPart->size, toRead, q2, d2, last2, 1);
+            int64 r2 = mFqReader2->Read(data_right + rightPart->size, toRead, q2, d2, last2, 1);
+#ifdef USE_MPI_IO
+            // Adjust read size based on file range limit after reading (same as left file)
+            if (file_end_pos_ > 0) {
+                int64 max_allowed = file_end_pos_ - (current_file_pos_ - r);  // current_file_pos_ already updated by left read
+                if (r2 > max_allowed) {
+                    r2 = max_allowed;
+                }
+            }
+            // Note: don't update current_file_pos_ again for right file since files are synchronized
+#endif
+            r = r2;
             if (r > 0) {
                 if (r == toRead) {
                     chunkEnd_right = cbufSize_right - GetNxtBuffSize;
@@ -996,7 +1053,13 @@ namespace rabbit {
             }
             if (eof1 && eof2)
                 eof = true;
-            if (!eof) {
+#ifdef USE_MPI_IO
+            // Check if we should also consider MPI range end as eof
+            if (file_end_pos_ > 0 && current_file_pos_ >= file_end_pos_) {
+                eof = true;
+            }
+#endif
+            if (!eof && toRead > 0) {
                 left_line_count = count_line(data, chunkEnd);
                 right_line_count = count_line(data_right, chunkEnd_right);
                 int64 difference = left_line_count - right_line_count;
@@ -1040,6 +1103,13 @@ namespace rabbit {
         }
 
         bool FastqFileReader::ReadNextChunk_(FastqDataChunk *chunk_) {
+#ifdef USE_MPI_IO
+            // Check if we've reached the end of our file range AND swapBuffer is empty
+            if (file_end_pos_ > 0 && current_file_pos_ >= file_end_pos_ && bufferSize == 0) {
+                chunk_->size = 0;
+                return false;
+            }
+#endif
             if (mFqReader->FinishRead() && bufferSize == 0) {
                 chunk_->size = 0;
                 return false;
@@ -1056,12 +1126,24 @@ namespace rabbit {
                 chunk_->size = bufferSize;
                 bufferSize = 0;
             }
+#ifdef USE_MPI_IO
+            // Adjust read size based on file range limit after reading
+            if (file_end_pos_ > 0) {
+                int64 max_allowed = file_end_pos_ - current_file_pos_;
+                if (toRead > max_allowed) {
+                    toRead = max_allowed;
+                }
+            }
+#endif
 
             // read the next chunk
             int64 r = mFqReader->Read(data + chunk_->size, toRead);
+#ifdef USE_MPI_IO
+            current_file_pos_ += r;
+#endif
 
             // if (r > 0) {
-            if (!mFqReader->FinishRead()) {
+            if (!mFqReader->FinishRead() && toRead > 0) {
                 cbufSize = r + chunk_->size;
                 uint64 chunkEnd = cbufSize - (cbufSize < GetNxtBuffSize ? cbufSize : GetNxtBuffSize);
                 chunkEnd = GetNextRecordPos_(data, chunkEnd, cbufSize);
@@ -1082,6 +1164,13 @@ namespace rabbit {
         }
 
         bool FastqFileReader::ReadNextChunk_(FastqDataChunk *chunk_, moodycamel::ReaderWriterQueue<std::pair<char *, int>> *q, std::atomic_int *d, std::pair<char *, int> &l) {
+#ifdef USE_MPI_IO
+            // Check if we've reached the end of our file range AND swapBuffer is empty
+            if (file_end_pos_ > 0 && current_file_pos_ >= file_end_pos_ && bufferSize == 0) {
+                chunk_->size = 0;
+                return false;
+            }
+#endif
             if ((mFqReader->FinishRead() || mFqReader->Eof()) && bufferSize == 0) {
                 chunk_->size = 0;
                 return false;
@@ -1098,10 +1187,22 @@ namespace rabbit {
                 chunk_->size = bufferSize;
                 bufferSize = 0;
             }
+#ifdef USE_MPI_IO
+            // Adjust read size based on file range limit after reading
+            if (file_end_pos_ > 0) {
+                int64 max_allowed = file_end_pos_ - current_file_pos_;
+                if (toRead > max_allowed) {
+                    toRead = max_allowed;
+                }
+            }
+#endif
 
             // read the next chunk
             int64 r = mFqReader->Read(data + chunk_->size, toRead, q, d, l, 0);
-            if (!mFqReader->FinishRead() && !mFqReader->Eof()) {
+#ifdef USE_MPI_IO
+            current_file_pos_ += r;
+#endif
+            if (!mFqReader->FinishRead() && !mFqReader->Eof() && toRead > 0) {
 
                 cbufSize = r + chunk_->size;
 

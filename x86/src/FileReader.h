@@ -315,6 +315,19 @@ namespace rabbit {
             eof = true;
         }
 
+#ifdef USE_MPI_IO
+        void Seek(int64_t pos) {
+            if (isZipped) {
+                // Cannot seek in gzipped files
+                std::cerr << "Warning: Cannot seek in gzipped files for MPI mode" << std::endl;
+            } else {
+                if (mFile != NULL) {
+                    FSEEK(mFile, pos, SEEK_SET);
+                }
+            }
+        }
+#endif
+
         ~FileReader() {
             if (mIgInbuf != NULL) delete mIgInbuf;
             if (mFile != NULL) {

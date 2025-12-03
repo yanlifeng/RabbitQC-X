@@ -1,5 +1,26 @@
 cmake_minimum_required(VERSION 3.12)
 
+# Option to enable MPI support
+option(USE_MPI_IO "Enable MPI I/O support" OFF)
+
+# Option to enable verbose debug output
+option(VERBOSE "Enable verbose debug output" OFF)
+
+# If MPI is enabled, use MPI compiler wrappers
+if(USE_MPI_IO)
+    message(STATUS "MPI I/O support enabled - using MPI compiler wrappers")
+    find_package(MPI REQUIRED)
+    
+    # Use MPI compiler wrappers
+    set(CMAKE_C_COMPILER ${MPI_C_COMPILER})
+    set(CMAKE_CXX_COMPILER ${MPI_CXX_COMPILER})
+    
+    message(STATUS "Using MPI C compiler: ${MPI_C_COMPILER}")
+    message(STATUS "Using MPI C++ compiler: ${MPI_CXX_COMPILER}")
+else()
+    message(STATUS "MPI I/O support disabled - using standard compilers")
+endif()
+
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -102,6 +123,18 @@ target_include_directories(rabbitqc-x PRIVATE
 # Platform macro for conditional compilation
 target_compile_definitions(rabbitqc-x PRIVATE PLATFORM_X86)
 
+# Add MPI definitions if enabled
+if(USE_MPI_IO)
+    target_compile_definitions(rabbitqc-x PRIVATE USE_MPI_IO)
+    message(STATUS "Added USE_MPI_IO compile definition")
+endif()
+
+# Add Verbose definition if enabled
+if(VERBOSE)
+    target_compile_definitions(rabbitqc-x PRIVATE Verbose)
+    message(STATUS "Verbose debug output enabled")
+endif()
+
 # Common compiler flags for both C and C++
 target_compile_options(rabbitqc-x PRIVATE
     ${INSTRUCT_SET}
@@ -142,6 +175,12 @@ target_link_libraries(rabbitqc-x PRIVATE
     stdc++fs
     dl
 )
+
+# Add MPI libraries if enabled
+if(USE_MPI_IO)
+    target_link_libraries(rabbitqc-x PRIVATE MPI::MPI_CXX)
+    message(STATUS "Linked MPI libraries")
+endif()
 
 # Installation
 install(TARGETS rabbitqc-x DESTINATION bin)

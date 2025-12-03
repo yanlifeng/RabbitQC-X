@@ -5,16 +5,164 @@
 #include "peqc.h"
 using namespace std;
 
+#ifdef USE_MPI_IO
+#include <mpi.h>
+#include <sys/stat.h>
+
+void SkipToLineEndPE(char *data_, int64_t &pos_, const int64_t size_) {
+    ASSERT(pos_ < size_);
+    while (data_[pos_] != '\n' && data_[pos_] != '\r' && pos_ < size_) ++pos_;
+    if (data_[pos_] == '\r' && pos_ < size_) {
+        if (data_[pos_ + 1] == '\n') {
+            ++pos_;
+        }
+    }
+}
+
+int64_t GetNextFastqPE(char *data_, int64_t pos_, const int64_t size_) {
+    SkipToLineEndPE(data_, pos_, size_);
+    ++pos_;
+
+    // find beginning of the next record
+    while (data_[pos_] != '@') {
+        SkipToLineEndPE(data_, pos_, size_);
+        ++pos_;
+    }
+    int64_t pos0 = pos_;
+
+    SkipToLineEndPE(data_, pos_, size_);
+    ++pos_;
+
+    if (data_[pos_] == '@')// previous one was a quality field
+        return pos_;
+    
+    SkipToLineEndPE(data_, pos_, size_);
+    ++pos_;
+    ASSERT(data_[pos_] == '+');// pos0 was the start of tag
+    return pos0;
+}
+#endif
+
 /**
  * @brief Construct function
  * @param cmd_info1 : cmd information
  */
+#ifdef USE_MPI_IO
+PeQc::PeQc(CmdInfo *cmd_info1, int my_rank, int comm_size) {
+    cmd_info_ = cmd_info1;
+    my_rank_ = my_rank;
+    comm_size_ = comm_size;
+    
+    // Initialize basic variables
+    filter_ = new Filter(cmd_info1);
+    done_thread_number_ = 0;
+    nowChunkId = 1;
+    in_is_zip_ = cmd_info1->in_file_name1_.find(".gz") != string::npos;
+    out_is_zip_ = cmd_info1->out_file_name1_.find(".gz") != string::npos;
+
+    // Check if both input files have the same size
+    struct stat st1, st2;
+    if (stat(cmd_info1->in_file_name1_.c_str(), &st1) != 0) {
+        fprintf(stderr, "Error: cannot stat file %s\n", cmd_info1->in_file_name1_.c_str());
+        exit(1);
+    }
+    if (stat(cmd_info1->in_file_name2_.c_str(), &st2) != 0) {
+        fprintf(stderr, "Error: cannot stat file %s\n", cmd_info1->in_file_name2_.c_str());
+        exit(1);
+    }
+    
+    int64_t real_file_size1 = st1.st_size;
+    int64_t real_file_size2 = st2.st_size;
+    
+    if (!in_is_zip_ && real_file_size1 != real_file_size2) {
+        fprintf(stderr, "Error: PE input files have different sizes: %lld vs %lld\n", 
+                real_file_size1, real_file_size2);
+        exit(1);
+    }
+
+    // Calculate initial approximate division (based on file1)
+    int64_t pre_size = (real_file_size1 + comm_size - 1) / comm_size;
+    int64_t start_pos = pre_size * my_rank;
+    int64_t end_pos = start_pos + pre_size;
+    if (end_pos > real_file_size1) end_pos = real_file_size1;
+
+    // Adjust boundaries to FASTQ record boundaries (only check file1)
+    int64_t right_pos = 0;
+    if (!in_is_zip_) {
+        FILE *pre_fp = fopen(cmd_info1->in_file_name1_.c_str(), "rb");
+        if (pre_fp == NULL) {
+            fprintf(stderr, "Error: cannot open file %s\n", cmd_info1->in_file_name1_.c_str());
+            exit(1);
+        }
+        fseek(pre_fp, start_pos, SEEK_SET);
+        char *tmp_chunk = new char[1 << 20];
+        int res_size = fread(tmp_chunk, sizeof(char), 1 << 20, pre_fp);
+        
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (my_rank == 0) {
+            right_pos = 0;
+        } else {
+            right_pos = GetNextFastqPE(tmp_chunk, 0, res_size);
+        }
+        fclose(pre_fp);
+        delete[] tmp_chunk;
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    int64_t now_pos = right_pos + start_pos;
+    int64_t *now_poss = new int64_t[comm_size];
+    now_poss[0] = now_pos;
+    
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (my_rank) {
+        MPI_Send(&now_pos, 1, MPI_LONG_LONG, 0, 0, MPI_COMM_WORLD);
+    } else {
+        for (int ii = 1; ii < comm_size; ii++) {
+            MPI_Recv(&(now_poss[ii]), 1, MPI_LONG_LONG, ii, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+    }
+    
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (my_rank == 0) {
+        for (int ii = 1; ii < comm_size; ii++) {
+            MPI_Send(now_poss, comm_size, MPI_LONG_LONG, ii, 0, MPI_COMM_WORLD);
+        }
+    } else {
+        MPI_Recv(now_poss, comm_size, MPI_LONG_LONG, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    
+    MPI_Barrier(MPI_COMM_WORLD);
+    
+    start_pos_ = now_poss[my_rank];
+    if (my_rank == comm_size - 1) {
+        end_pos_ = real_file_size1;
+    } else {
+        end_pos_ = now_poss[my_rank + 1];
+    }
+    
+    delete[] now_poss;
+
+    if (my_rank == 0) {
+        debug_printf("MPI PE file splitting: rank %d, start: %lld, end: %lld\n", 
+                     my_rank, start_pos_, end_pos_);
+    }
+
+    // Continue with common initialization
+    out_queue1_ = NULL;
+    out_queue2_ = NULL;
+#else
 PeQc::PeQc(CmdInfo *cmd_info1) {
     cmd_info_ = cmd_info1;
     filter_ = new Filter(cmd_info1);
     done_thread_number_ = 0;
-    int out_block_nums = int(1.0 * cmd_info1->in_file_size1_ / cmd_info1->out_block_size_);
-    //fprintf(stderr, "out_block_nums %d\n", out_block_nums);
+    out_queue1_ = NULL;
+    out_queue2_ = NULL;
+    nowChunkId = 1;
+    in_is_zip_ = cmd_info1->in_file_name1_.find(".gz") != string::npos;
+    out_is_zip_ = cmd_info1->out_file_name1_.find(".gz") != string::npos;
+#endif
+    filter_ = new Filter(cmd_info1);
+    done_thread_number_ = 0;
     out_queue1_ = NULL;
     out_queue2_ = NULL;
     nowChunkId = 1;
@@ -358,7 +506,11 @@ void PeQc::ProducerPeFastqTask(string file, string file2, rabbit::fq::FastqDataP
     rabbit::fq::FastqFileReader *fqFileReader;
     rabbit::uint32 tmpSize = 1 << 20;
     if (cmd_info_->seq_len_ <= 200) tmpSize = 1 << 14;
+#ifdef USE_MPI_IO
+    fqFileReader = new rabbit::fq::FastqFileReader(file, *fastqPool, file2, in_is_zip_, tmpSize, start_pos_, end_pos_);
+#else
     fqFileReader = new rabbit::fq::FastqFileReader(file, *fastqPool, file2, in_is_zip_, tmpSize);
+#endif
     int n_chunks = 0;
 
 
@@ -399,14 +551,21 @@ void PeQc::ProducerPeFastqTask(string file, string file2, rabbit::fq::FastqDataP
         delete[] last1.first;
         delete[] last2.first;
     } else {
+        long long tot_read_size = 0;
+        long long tot_read_size2 = 0;
         while (true) {
             rabbit::fq::FastqDataPairChunk *fqdatachunk;
             //fqdatachunk = fqFileReader->readNextPairChunkParallel();
             fqdatachunk = fqFileReader->readNextPairChunk();
             if (fqdatachunk == NULL) break;
+            tot_read_size += fqdatachunk->left_part->size;
+            tot_read_size2 += fqdatachunk->right_part->size;
             n_chunks++;
             dq.Push(n_chunks, fqdatachunk);
         }
+        // printf("tot_read_size: %lld\n", tot_read_size);
+        // printf("tot_read_size2: %lld\n", tot_read_size2);
+        // printf("n_chunks: %lld\n", n_chunks);
     }
 
 
@@ -1162,12 +1321,133 @@ void PeQc::ProcessPeFastq() {
             aft_vec_state1.push_back(p_thread_info[t]->aft_state1_);
             aft_vec_state2.push_back(p_thread_info[t]->aft_state2_);
         }
-        auto pre_state1 = State::MergeStates(pre_vec_state1);
-        auto pre_state2 = State::MergeStates(pre_vec_state2);
-        auto aft_state1 = State::MergeStates(aft_vec_state1);
-        auto aft_state2 = State::MergeStates(aft_vec_state2);
+        auto pre_state1_tmp = State::MergeStates(pre_vec_state1);
+        auto pre_state2_tmp = State::MergeStates(pre_vec_state2);
+        auto aft_state1_tmp = State::MergeStates(aft_vec_state1);
+        auto aft_state2_tmp = State::MergeStates(aft_vec_state2);
 
         debug_printf("merge done\n");
+
+#ifdef USE_MPI_IO
+        // MPI: merge state information across all processes
+        vector<State *> pre_state1_mpis, pre_state2_mpis, aft_state1_mpis, aft_state2_mpis;
+        pre_state1_mpis.push_back(pre_state1_tmp);
+        pre_state2_mpis.push_back(pre_state2_tmp);
+        aft_state1_mpis.push_back(aft_state1_tmp);
+        aft_state2_mpis.push_back(aft_state2_tmp);
+
+        // Gather pre_state1
+        if(my_rank_ == 0) {
+            for(int i = 1; i < comm_size_; i++) {
+                int now_size = 0;
+                MPI_Recv(&now_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                char* info = new char[now_size];
+                MPI_Recv(info, now_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                State* tmp_state = new State(info, now_size, cmd_info_, cmd_info_->seq_len_, cmd_info_->qul_range_, false);
+                delete[] info;
+                pre_state1_mpis.push_back(tmp_state);
+            }
+        } else {
+            string pre_state1_is = pre_state1_tmp->ParseString();
+            int now_size = pre_state1_is.length();
+            MPI_Send(&now_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+            MPI_Send(pre_state1_is.c_str(), now_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // Gather pre_state2
+        if(my_rank_ == 0) {
+            for(int i = 1; i < comm_size_; i++) {
+                int now_size = 0;
+                MPI_Recv(&now_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                char* info = new char[now_size];
+                MPI_Recv(info, now_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                State* tmp_state = new State(info, now_size, cmd_info_, cmd_info_->seq_len_, cmd_info_->qul_range_, true);
+                delete[] info;
+                pre_state2_mpis.push_back(tmp_state);
+            }
+        } else {
+            string pre_state2_is = pre_state2_tmp->ParseString();
+            int now_size = pre_state2_is.length();
+            MPI_Send(&now_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+            MPI_Send(pre_state2_is.c_str(), now_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // Gather aft_state1
+        if(my_rank_ == 0) {
+            for(int i = 1; i < comm_size_; i++) {
+                int now_size = 0;
+                MPI_Recv(&now_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                char* info = new char[now_size];
+                MPI_Recv(info, now_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                State* tmp_state = new State(info, now_size, cmd_info_, cmd_info_->seq_len_, cmd_info_->qul_range_, false);
+                delete[] info;
+                aft_state1_mpis.push_back(tmp_state);
+            }
+        } else {
+            string aft_state1_is = aft_state1_tmp->ParseString();
+            int now_size = aft_state1_is.length();
+            MPI_Send(&now_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+            MPI_Send(aft_state1_is.c_str(), now_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // Gather aft_state2
+        if(my_rank_ == 0) {
+            for(int i = 1; i < comm_size_; i++) {
+                int now_size = 0;
+                MPI_Recv(&now_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                char* info = new char[now_size];
+                MPI_Recv(info, now_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                State* tmp_state = new State(info, now_size, cmd_info_, cmd_info_->seq_len_, cmd_info_->qul_range_, true);
+                delete[] info;
+                aft_state2_mpis.push_back(tmp_state);
+            }
+        } else {
+            string aft_state2_is = aft_state2_tmp->ParseString();
+            int now_size = aft_state2_is.length();
+            MPI_Send(&now_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+            MPI_Send(aft_state2_is.c_str(), now_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // Non-zero ranks clean up and exit
+        if(my_rank_ != 0) {
+            delete pre_state1_tmp;
+            delete pre_state2_tmp;
+            delete aft_state1_tmp;
+            delete aft_state2_tmp;
+            delete fastqPool;
+            for (int t = 0; t < cmd_info_->thread_number_; t++) {
+                delete p_thread_info[t];
+            }
+            delete[] p_thread_info;
+            return;
+        }
+
+        // Only rank 0 continues: merge all states
+        auto pre_state1 = State::MergeStates(pre_state1_mpis);
+        auto pre_state2 = State::MergeStates(pre_state2_mpis);
+        auto aft_state1 = State::MergeStates(aft_state1_mpis);
+        auto aft_state2 = State::MergeStates(aft_state2_mpis);
+        for(int i = 1; i < comm_size_; i++) {
+            delete pre_state1_mpis[i];
+            delete pre_state2_mpis[i];
+            delete aft_state1_mpis[i];
+            delete aft_state2_mpis[i];
+        }
+        delete pre_state1_tmp;
+        delete pre_state2_tmp;
+        delete aft_state1_tmp;
+        delete aft_state2_tmp;
+#else
+        auto pre_state1 = pre_state1_tmp;
+        auto pre_state2 = pre_state2_tmp;
+        auto aft_state1 = aft_state1_tmp;
+        auto aft_state2 = aft_state2_tmp;
+#endif
+
         fprintf(stderr, "\nprint read1 (before filter) info :\n");
         State::PrintStates(pre_state1);
         fprintf(stderr, "\nprint read1 (after filter) info :\n");
@@ -1437,10 +1717,138 @@ void PeQc::ProcessPeFastq() {
             aft_vec_state1.push_back(p_thread_info[t]->aft_state1_);
             aft_vec_state2.push_back(p_thread_info[t]->aft_state2_);
         }
-        auto pre_state1 = State::MergeStates(pre_vec_state1);
-        auto pre_state2 = State::MergeStates(pre_vec_state2);
-        auto aft_state1 = State::MergeStates(aft_vec_state1);
-        auto aft_state2 = State::MergeStates(aft_vec_state2);
+        auto pre_state1_tmp = State::MergeStates(pre_vec_state1);
+        auto pre_state2_tmp = State::MergeStates(pre_vec_state2);
+        auto aft_state1_tmp = State::MergeStates(aft_vec_state1);
+        auto aft_state2_tmp = State::MergeStates(aft_vec_state2);
+
+#ifdef USE_MPI_IO
+        // MPI: merge state information across all processes
+        vector<State *> pre_state1_mpis, pre_state2_mpis, aft_state1_mpis, aft_state2_mpis;
+        pre_state1_mpis.push_back(pre_state1_tmp);
+        pre_state2_mpis.push_back(pre_state2_tmp);
+        aft_state1_mpis.push_back(aft_state1_tmp);
+        aft_state2_mpis.push_back(aft_state2_tmp);
+
+        // Gather pre_state1
+        if(my_rank_ == 0) {
+            for(int i = 1; i < comm_size_; i++) {
+                int now_size = 0;
+                MPI_Recv(&now_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                char* info = new char[now_size];
+                MPI_Recv(info, now_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                State* tmp_state = new State(info, now_size, cmd_info_, cmd_info_->seq_len_, cmd_info_->qul_range_, false);
+                delete[] info;
+                pre_state1_mpis.push_back(tmp_state);
+            }
+        } else {
+            string pre_state1_is = pre_state1_tmp->ParseString();
+            int now_size = pre_state1_is.length();
+            MPI_Send(&now_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+            MPI_Send(pre_state1_is.c_str(), now_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // Gather pre_state2
+        if(my_rank_ == 0) {
+            for(int i = 1; i < comm_size_; i++) {
+                int now_size = 0;
+                MPI_Recv(&now_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                char* info = new char[now_size];
+                MPI_Recv(info, now_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                State* tmp_state = new State(info, now_size, cmd_info_, cmd_info_->seq_len_, cmd_info_->qul_range_, true);
+                delete[] info;
+                pre_state2_mpis.push_back(tmp_state);
+            }
+        } else {
+            string pre_state2_is = pre_state2_tmp->ParseString();
+            int now_size = pre_state2_is.length();
+            MPI_Send(&now_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+            MPI_Send(pre_state2_is.c_str(), now_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // Gather aft_state1
+        if(my_rank_ == 0) {
+            for(int i = 1; i < comm_size_; i++) {
+                int now_size = 0;
+                MPI_Recv(&now_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                char* info = new char[now_size];
+                MPI_Recv(info, now_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                State* tmp_state = new State(info, now_size, cmd_info_, cmd_info_->seq_len_, cmd_info_->qul_range_, false);
+                delete[] info;
+                aft_state1_mpis.push_back(tmp_state);
+            }
+        } else {
+            string aft_state1_is = aft_state1_tmp->ParseString();
+            int now_size = aft_state1_is.length();
+            MPI_Send(&now_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+            MPI_Send(aft_state1_is.c_str(), now_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // Gather aft_state2
+        if(my_rank_ == 0) {
+            for(int i = 1; i < comm_size_; i++) {
+                int now_size = 0;
+                MPI_Recv(&now_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                char* info = new char[now_size];
+                MPI_Recv(info, now_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                State* tmp_state = new State(info, now_size, cmd_info_, cmd_info_->seq_len_, cmd_info_->qul_range_, true);
+                delete[] info;
+                aft_state2_mpis.push_back(tmp_state);
+            }
+        } else {
+            string aft_state2_is = aft_state2_tmp->ParseString();
+            int now_size = aft_state2_is.length();
+            MPI_Send(&now_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+            MPI_Send(aft_state2_is.c_str(), now_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // Non-zero ranks clean up and exit
+        if(my_rank_ != 0) {
+            delete pre_state1_tmp;
+            delete pre_state2_tmp;
+            delete aft_state1_tmp;
+            delete aft_state2_tmp;
+            delete fastqPool;
+            for (int t = 0; t < cmd_info_->thread_number_; t++) {
+                delete threads[t];
+                delete p_thread_info[t];
+            }
+            delete[] threads;
+            delete[] p_thread_info;
+            if (cmd_info_->write_data_) {
+                delete write_thread1;
+                if (cmd_info_->interleaved_out_ == 0)
+                    delete write_thread2;
+            }
+            return;
+        }
+
+        // Only rank 0 continues: merge all states
+        auto pre_state1 = State::MergeStates(pre_state1_mpis);
+        auto pre_state2 = State::MergeStates(pre_state2_mpis);
+        auto aft_state1 = State::MergeStates(aft_state1_mpis);
+        auto aft_state2 = State::MergeStates(aft_state2_mpis);
+        for(int i = 1; i < comm_size_; i++) {
+            delete pre_state1_mpis[i];
+            delete pre_state2_mpis[i];
+            delete aft_state1_mpis[i];
+            delete aft_state2_mpis[i];
+        }
+        delete pre_state1_tmp;
+        delete pre_state2_tmp;
+        delete aft_state1_tmp;
+        delete aft_state2_tmp;
+#else
+        auto pre_state1 = pre_state1_tmp;
+        auto pre_state2 = pre_state2_tmp;
+        auto aft_state1 = aft_state1_tmp;
+        auto aft_state2 = aft_state2_tmp;
+#endif
+
         if (cmd_info_->do_overrepresentation_) {
             debug_printf("orp cost %f\n", pre_state1->GetOrpCost() + pre_state2->GetOrpCost() + aft_state1->GetOrpCost() + aft_state2->GetOrpCost());
         }

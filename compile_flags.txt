@@ -1,0 +1,9 @@
+-xc++
+-std=c++11
+-g
+-DPLATFORM_X86
+-DUSE_MPI_IO
+-O3
+-I./src
+-I./x86/include
+-I./x86/src

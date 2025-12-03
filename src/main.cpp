@@ -47,13 +47,14 @@ int main(int argc, char **argv) {
         while(aa == 0) {
         }
     }
+#endif
 
     int my_rank = 0;
     int comm_size = 1;
+#if defined(USE_MPI_IO) || defined(PLATFORM_SUNWAY)
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-
     if(my_rank != 0) freopen("dev/null", "w", stdout);
 #endif
 
@@ -271,6 +272,20 @@ int main(int argc, char **argv) {
             printf("now use split write module, PE, %s\n", cmd_info.out_file_name2_.c_str());
         }
     }
+#endif
+
+#ifdef PLATFORM_X86
+  #ifdef USE_MPI_IO
+    // Add split prefix to output filenames for MPI mode
+    if(cmd_info.out_file_name1_.length() > 0) {
+        cmd_info.out_file_name1_ = "split_" + to_string(my_rank) + "_" + cmd_info.out_file_name1_;
+        fprintf(stderr, "MPI mode: output file 1: %s\n", cmd_info.out_file_name1_.c_str());
+    }
+    if(cmd_info.out_file_name2_.length() > 0) {
+        cmd_info.out_file_name2_ = "split_" + to_string(my_rank) + "_" + cmd_info.out_file_name2_;
+        fprintf(stderr, "MPI mode: output file 2: %s\n", cmd_info.out_file_name2_.c_str());
+    }
+  #endif
 #endif
 
     if(cmd_info.is_TGS_){
@@ -512,9 +527,9 @@ int main(int argc, char **argv) {
     if (!quVersion && cmd_info.in_file_name1_.length() == 0) {
         error_exit("-i/--inFile1 can't be null");
     }
-    fprintf(stderr, "inFile1 is %s\n", cmd_info.in_file_name1_.c_str());
+    if (my_rank == 0) fprintf(stderr, "inFile1 is %s\n", cmd_info.in_file_name1_.c_str());
     if (cmd_info.isStdout_) cmd_info.out_file_name1_ = "/dev/stdout";
-    if (cmd_info.in_file_name2_.length()) fprintf(stderr, "inFile2 is %s\n", cmd_info.in_file_name2_.c_str());
+    if (cmd_info.in_file_name2_.length()) if (my_rank == 0) fprintf(stderr, "inFile2 is %s\n", cmd_info.in_file_name2_.c_str());
 
     if (cmd_info.out_file_name1_.length()) {
         bool res = exists_file(cmd_info.out_file_name1_);
@@ -629,7 +644,7 @@ int main(int argc, char **argv) {
         cmd_info.adapter_seq1_ = "";
         cmd_info.adapter_seq2_ = "";
         cmd_info.adapter_fasta_file_ = "";
-        fprintf(stderr, "no adapter trim (ignore '--adapterSeq*' and '--adapterFastaFile' options) because using the '-a (--noTrimAdapter)' option!\n");
+        if (my_rank == 0) fprintf(stderr, "no adapter trim (ignore '--adapterSeq*' and '--adapterFastaFile' options) because using the '-a (--noTrimAdapter)' option!\n");
     }
 
     if (cmd_info.trim_5end_) {
@@ -711,7 +726,6 @@ int main(int argc, char **argv) {
     //fprintf(stderr, "auto detect max seqs len is %d\n", mx_len);
 #else
     int mx_len = Adapter::EvalMaxLen(cmd_info.in_file_name1_);
-    printf("mx_len %d\n", mx_len);
 #endif
     cmd_info.seq_len_ = mx_len;
     if(cmd_info.adapter_fasta_file_.length() > 0){
@@ -764,7 +778,7 @@ int main(int argc, char **argv) {
         }
         if (cmd_info.trim_adapter_ || cmd_info.correct_data_ || !cmd_info.no_insert_size_) {
             cmd_info.analyze_overlap_ = true;
-            fprintf(stderr, "for PE data, overlap analysis is used to find adapter by default\n");
+            if (my_rank == 0) fprintf(stderr, "for PE data, overlap analysis is used to find adapter by default\n");
         }
 
         if (cmd_info.trim_front1_) {
@@ -801,7 +815,11 @@ int main(int argc, char **argv) {
             cmd_info.adapter_len_lim_ = min(cmd_info.adapter_len_lim_, int(cmd_info.adapter_seq2_.length()));
 
 #ifdef PLATFORM_X86
+  #ifdef USE_MPI_IO 
+        PeQc *pe_qc = new PeQc(&cmd_info, my_rank, comm_size);
+  #else
         PeQc *pe_qc = new PeQc(&cmd_info);
+  #endif
 #else
         PeQc *pe_qc = new PeQc(&cmd_info, my_rank, comm_size);
 #endif
@@ -850,7 +868,12 @@ int main(int argc, char **argv) {
         if (cmd_info.adapter_seq1_.length() > 0)
             cmd_info.adapter_len_lim_ = min(cmd_info.adapter_len_lim_, int(cmd_info.adapter_seq1_.length()));
 #ifdef PLATFORM_X86
+  #ifdef USE_MPI_IO 
+        // sleep(10);
+        SeQc *se_qc = new SeQc(&cmd_info, my_rank, comm_size);
+  #else
         SeQc *se_qc = new SeQc(&cmd_info);
+  #endif
 #else
         SeQc *se_qc = new SeQc(&cmd_info, my_rank, comm_size);
 #endif
@@ -883,12 +906,12 @@ int main(int argc, char **argv) {
         }
     }
 #endif
-    fprintf(stderr, "cmd is %s\n", command.c_str());
-    fprintf(stderr, "total cost %.5fs\n", GetTime() - t_start);
-#ifdef PLATFORM_X86
-#else
+    if (my_rank == 0) fprintf(stderr, "cmd is %s\n", command.c_str());
+    if (my_rank == 0) fprintf(stderr, "total cost %.5fs\n", GetTime() - t_start);
+
+#if defined(USE_MPI_IO) || defined(PLATFORM_SUNWAY)
     MPI_Finalize();
-    printf("MPI_Finalize done\n");
+    if (my_rank == 0) fprintf(stderr, "MPI_Finalize done\n");
 #endif
     return 0;
 }

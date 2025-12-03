@@ -28,6 +28,12 @@ class State {
 public:
     State(CmdInfo *cmd_info, int seq_len, int qul_range, bool is_reed2);
 
+#ifdef USE_MPI_IO
+    State(const char *info, int info_len, CmdInfo *cmd_info, int seq_len, int qul_range, bool is_reed2);
+    
+    std::string ParseString();
+#endif
+
     ~State();
 
     void StateInfo(neoReference &ref);

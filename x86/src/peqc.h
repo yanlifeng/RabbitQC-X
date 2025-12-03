@@ -31,7 +31,11 @@
 
 class PeQc {
 public:
+#ifdef USE_MPI_IO
+    PeQc(CmdInfo *cmd_info, int my_rank, int comm_size);
+#else
     PeQc(CmdInfo *cmd_info);
+#endif
 
     PeQc();
 
@@ -131,6 +135,13 @@ private:
     std::atomic_int careDone1;
     std::atomic_int careDone2;
 
+#ifdef USE_MPI_IO
+    // MPI related members
+    int my_rank_;
+    int comm_size_;
+    int64_t start_pos_;
+    int64_t end_pos_;
+#endif
 };
 
 

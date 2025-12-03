@@ -4,10 +4,140 @@
 #include "seqc.h"
 using namespace std;
 
+#ifdef USE_MPI_IO
+#include <mpi.h>
+#include <sys/stat.h>
+
+void SkipToLineEnd(char *data_, int64_t &pos_, const int64_t size_) {
+    ASSERT(pos_ < size_);
+    while (data_[pos_] != '\n' && data_[pos_] != '\r' && pos_ < size_) ++pos_;
+    if (data_[pos_] == '\r' && pos_ < size_) {
+        if (data_[pos_ + 1] == '\n') {
+            ++pos_;
+        }
+    }
+}
+
+int64_t GetNextFastq(char *data_, int64_t pos_, const int64_t size_) {
+    SkipToLineEnd(data_, pos_, size_);
+    ++pos_;
+
+    // find beginning of the next record
+    while (data_[pos_] != '@') {
+        SkipToLineEnd(data_, pos_, size_);
+        ++pos_;
+    }
+    int64_t pos0 = pos_;
+
+    SkipToLineEnd(data_, pos_, size_);
+    ++pos_;
+
+    if (data_[pos_] == '@')// previous one was a quality field
+        return pos_;
+    
+    SkipToLineEnd(data_, pos_, size_);
+    ++pos_;
+    ASSERT(data_[pos_] == '+');// pos0 was the start of tag
+    return pos0;
+}
+#endif
+
 /**
  * @brief Construct function
  * @param cmd_info1 : cmd information
  */
+#ifdef USE_MPI_IO
+SeQc::SeQc(CmdInfo *cmd_info1, int my_rank, int comm_size) {
+    cmd_info_ = cmd_info1;
+    my_rank_ = my_rank;
+    comm_size_ = comm_size;
+    
+    // Initialize basic variables
+    filter_ = new Filter(cmd_info1);
+    done_thread_number_ = 0;
+    nowChunkId = 1;
+    in_is_zip_ = cmd_info1->in_file_name1_.find(".gz") != string::npos;
+    out_is_zip_ = cmd_info1->out_file_name1_.find(".gz") != string::npos;
+
+    // Get total file size
+    struct stat st;
+    if (stat(cmd_info1->in_file_name1_.c_str(), &st) != 0) {
+        fprintf(stderr, "Error: cannot stat file %s\n", cmd_info1->in_file_name1_.c_str());
+        exit(1);
+    }
+    int64_t real_file_size = st.st_size;
+
+    // Calculate initial approximate division
+    int64_t pre_size = (real_file_size + comm_size - 1) / comm_size;
+    int64_t start_pos = pre_size * my_rank;
+    int64_t end_pos = start_pos + pre_size;
+    if (end_pos > real_file_size) end_pos = real_file_size;
+
+    // Adjust boundaries to FASTQ record boundaries (only for non-gzipped files)
+    int64_t right_pos = 0;
+    if (!in_is_zip_) {
+        FILE *pre_fp = fopen(cmd_info1->in_file_name1_.c_str(), "rb");
+        if (pre_fp == NULL) {
+            fprintf(stderr, "Error: cannot open file %s\n", cmd_info1->in_file_name1_.c_str());
+            exit(1);
+        }
+        fseek(pre_fp, start_pos, SEEK_SET);
+        char *tmp_chunk = new char[1 << 20];
+        int res_size = fread(tmp_chunk, sizeof(char), 1 << 20, pre_fp);
+        
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (my_rank == 0) {
+            right_pos = 0;
+        } else {
+            right_pos = GetNextFastq(tmp_chunk, 0, res_size);
+        }
+        fclose(pre_fp);
+        delete[] tmp_chunk;
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    int64_t now_pos = right_pos + start_pos;
+    int64_t *now_poss = new int64_t[comm_size];
+    now_poss[0] = now_pos;
+    
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (my_rank) {
+        MPI_Send(&now_pos, 1, MPI_LONG_LONG, 0, 0, MPI_COMM_WORLD);
+    } else {
+        for (int ii = 1; ii < comm_size; ii++) {
+            MPI_Recv(&(now_poss[ii]), 1, MPI_LONG_LONG, ii, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+    }
+    
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (my_rank == 0) {
+        for (int ii = 1; ii < comm_size; ii++) {
+            MPI_Send(now_poss, comm_size, MPI_LONG_LONG, ii, 0, MPI_COMM_WORLD);
+        }
+    } else {
+        MPI_Recv(now_poss, comm_size, MPI_LONG_LONG, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    
+    MPI_Barrier(MPI_COMM_WORLD);
+    
+    start_pos_ = now_poss[my_rank];
+    if (my_rank == comm_size - 1) {
+        end_pos_ = real_file_size;
+    } else {
+        end_pos_ = now_poss[my_rank + 1];
+    }
+    
+    delete[] now_poss;
+
+    if (my_rank == 0) {
+        debug_printf("MPI file splitting: rank %d, start: %lld, end: %lld\n", 
+                     my_rank, start_pos_, end_pos_);
+    }
+
+    // Continue with common initialization
+    int out_block_nums = int(1.0 * cmd_info1->in_file_size1_ / cmd_info1->out_block_size_);
+    out_queue_ = NULL;
+#else
 SeQc::SeQc(CmdInfo *cmd_info1) {
     cmd_info_ = cmd_info1;
     filter_ = new Filter(cmd_info1);
@@ -18,6 +148,7 @@ SeQc::SeQc(CmdInfo *cmd_info1) {
     nowChunkId = 1;
     in_is_zip_ = cmd_info1->in_file_name1_.find(".gz") != string::npos;
     out_is_zip_ = cmd_info1->out_file_name1_.find(".gz") != string::npos;
+#endif
     if (cmd_info1->write_data_) {
         out_queue_ = new CIPair[1 << 20];
         queueP1 = 0;
@@ -270,7 +401,11 @@ void SeQc::ProducerSeFastqTask(string file, rabbit::fq::FastqDataPool *fastq_dat
     rabbit::fq::FastqFileReader *fqFileReader;
     rabbit::uint32 tmpSize = 1 << 20;
     if (cmd_info_->seq_len_ <= 200) tmpSize = 1 << 14;
+#ifdef USE_MPI_IO
+    fqFileReader = new rabbit::fq::FastqFileReader(file, *fastq_data_pool, "", in_is_zip_, tmpSize, start_pos_, end_pos_);
+#else
     fqFileReader = new rabbit::fq::FastqFileReader(file, *fastq_data_pool, "", in_is_zip_, tmpSize);
+#endif
     int64_t n_chunks = 0;
 
     if (cmd_info_->use_pugz_) {
@@ -299,13 +434,17 @@ void SeQc::ProducerSeFastqTask(string file, rabbit::fq::FastqDataPool *fastq_dat
         }
         delete[] last_info.first;
     } else {
+        long long tot_read_size = 0;
         while (true) {
             rabbit::fq::FastqDataChunk *fqdatachunk;
             fqdatachunk = fqFileReader->readNextChunk();
             if (fqdatachunk == NULL) break;
+            tot_read_size += fqdatachunk->size;
             n_chunks++;
             dq.Push(n_chunks, fqdatachunk);
         }
+        // printf("tot_read_size: %lld\n", tot_read_size);
+        // printf("n_chunks: %lld\n", n_chunks);
     }
 
 
@@ -714,12 +853,95 @@ void SeQc::ProcessSeFastq() {
         pre_vec_state.push_back(p_thread_info[t]->pre_state1_);
         aft_vec_state.push_back(p_thread_info[t]->aft_state1_);
     }
-    auto pre_state = State::MergeStates(pre_vec_state);
-    auto aft_state = State::MergeStates(aft_vec_state);
+    auto pre_state_tmp = State::MergeStates(pre_vec_state);
+    auto aft_state_tmp = State::MergeStates(aft_vec_state);
+    if (cmd_info_->do_overrepresentation_) {
+        debug_printf("orp cost %lf\n", pre_state_tmp->GetOrpCost() + aft_state_tmp->GetOrpCost());
+    }
+    debug_printf("merge done\n");
+
+#ifdef USE_MPI_IO
+    // MPI: merge state information across all processes
+    vector<State *> pre_state_mpis;
+    vector<State *> aft_state_mpis;
+    pre_state_mpis.push_back(pre_state_tmp);
+    aft_state_mpis.push_back(aft_state_tmp);
+
+    // Gather state information from all processes to rank 0
+    if(my_rank_ == 0) {
+        for(int i = 1; i < comm_size_; i++) {
+            int now_size = 0;
+            MPI_Recv(&now_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            char* info = new char[now_size];
+            MPI_Recv(info, now_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            State* tmp_state = new State(info, now_size, cmd_info_, cmd_info_->seq_len_, cmd_info_->qul_range_, false);
+            delete[] info;
+            pre_state_mpis.push_back(tmp_state);
+        }
+    } else {
+        string pre_state_is = pre_state_tmp->ParseString();
+        int now_size = pre_state_is.length();
+        MPI_Send(&now_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        MPI_Send(pre_state_is.c_str(), now_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+    }
+
+    debug_printf("pre merge done\n");
+
+    if(my_rank_ == 0) {
+        for(int i = 1; i < comm_size_; i++) {
+            int now_size = 0;
+            MPI_Recv(&now_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            char* info = new char[now_size];
+            MPI_Recv(info, now_size, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            State* tmp_state = new State(info, now_size, cmd_info_, cmd_info_->seq_len_, cmd_info_->qul_range_, false);
+            delete[] info;
+            aft_state_mpis.push_back(tmp_state);
+        }
+    } else {
+        string aft_state_is = aft_state_tmp->ParseString();
+        int now_size = aft_state_is.length();
+        MPI_Send(&now_size, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        MPI_Send(aft_state_is.c_str(), now_size, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    debug_printf("aft merge done\n");
+
+    // Non-zero ranks clean up and exit
+    if(my_rank_ != 0) {
+        delete pre_state_tmp;
+        delete aft_state_tmp;
+        delete fastqPool;
+        for (int t = 0; t < cmd_info_->thread_number_; t++) {
+            delete threads[t];
+            delete p_thread_info[t];
+        }
+        delete[] threads;
+        delete[] p_thread_info;
+        if (cmd_info_->write_data_) {
+            delete write_thread;
+        }
+        return;
+    }
+
+    // Only rank 0 continues: merge all states from different MPI processes
+    auto pre_state = State::MergeStates(pre_state_mpis);
+    auto aft_state = State::MergeStates(aft_state_mpis);
+    // Clean up intermediate states from other processes
+    for(int i = 1; i < comm_size_; i++) {
+        delete pre_state_mpis[i];
+        delete aft_state_mpis[i];
+    }
+    delete pre_state_tmp;
+    delete aft_state_tmp;
+#else
+    auto pre_state = pre_state_tmp;
+    auto aft_state = aft_state_tmp;
+#endif
+
     if (cmd_info_->do_overrepresentation_) {
         debug_printf("orp cost %lf\n", pre_state->GetOrpCost() + aft_state->GetOrpCost());
     }
-    debug_printf("merge done\n");
     fprintf(stderr, "\nprint read (before filter) info :\n");
     State::PrintStates(pre_state);
     fprintf(stderr, "\nprint read (after filter) info :\n");
@@ -729,7 +951,6 @@ void SeQc::ProcessSeFastq() {
         State::PrintAdapterToFile(aft_state);
     State::PrintFilterResults(aft_state);
     fprintf(stderr, "\n");
-
     if (cmd_info_->do_overrepresentation_ && cmd_info_->print_ORP_seqs_) {
         auto hash_graph1 = pre_state->GetHashGraph();
         int hash_num1 = pre_state->GetHashNum();

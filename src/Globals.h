@@ -62,6 +62,10 @@ Version: 2.00
 #define slave_num 64
 #endif
 
+#ifdef USE_MPI_IO
+#include <mpi.h>
+#endif
+
 inline double GetTime() {
     struct timeval tv;
     gettimeofday(&tv, NULL);

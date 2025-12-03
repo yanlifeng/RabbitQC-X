@@ -19,6 +19,48 @@
 #define gcMax 100000
 using namespace std;
 
+#ifdef USE_MPI_IO
+// Helper functions for parsing serialized state data
+int64_t getInt64(const char* info, int &pos, int info_len) {
+    string tmp = "";
+    while(pos < info_len) {
+        if(info[pos] == '@' || info[pos] == '$') {
+            pos++;
+            break;
+        }
+        tmp += info[pos];
+        pos++;
+    }
+    return stoll(tmp);
+}
+
+int getInt(const char* info, int &pos, int info_len) {
+    string tmp = "";
+    while(pos < info_len) {
+        if(info[pos] == '@' || info[pos] == '$') {
+            pos++;
+            break;
+        }
+        tmp += info[pos];
+        pos++;
+    }
+    return stoi(tmp);
+}
+
+double getDouble(const char* info, int &pos, int info_len) {
+    string tmp = "";
+    while(pos < info_len) {
+        if(info[pos] == '@' || info[pos] == '$') {
+            pos++;
+            break;
+        }
+        tmp += info[pos];
+        pos++;
+    }
+    return stod(tmp);
+}
+#endif
+
 
 State::State(CmdInfo *cmd_info, int seq_len, int qul_range, bool is_read2) {
     is_read2_ = is_read2;
@@ -89,6 +131,124 @@ State::State(CmdInfo *cmd_info, int seq_len, int qul_range, bool is_read2) {
     }
 }
 
+#ifdef USE_MPI_IO
+State::State(const char *info, int info_len, CmdInfo *cmd_info, int seq_len, int qul_range, bool is_read2) {
+    is_read2_ = is_read2;
+    cmd_info_ = cmd_info;
+    orpCost = 0;
+    q20bases_ = 0;
+    q30bases_ = 0;
+    lines_ = 0;
+    malloc_seq_len_ = seq_len;
+    avg_len = 0;
+    qul_range_ = qul_range;
+    real_seq_len_ = 0;
+    has_summarize_ = false;
+    int pos_seq_len = malloc_seq_len_ * 8;
+    pos_cnt_ = new int64_t[pos_seq_len];
+    memset(pos_cnt_, 0, pos_seq_len * sizeof(int64_t));
+    pos_qul_ = new int64_t[pos_seq_len];
+    memset(pos_qul_, 0, pos_seq_len * sizeof(int64_t));
+    len_cnt_ = new int64_t[malloc_seq_len_];
+    memset(len_cnt_, 0, malloc_seq_len_ * sizeof(int64_t));
+    gc_cnt_ = new int64_t[gcMax + 100];
+    memset(gc_cnt_, 0, (gcMax + 1) * sizeof(int64_t));
+    qul_cnt_ = new int64_t[qul_range_];
+    memset(qul_cnt_, 0, qul_range_ * sizeof(int64_t));
+
+    kmer_buf_len_ = 2 << (5 * 2);
+    kmer_ = new int64_t[kmer_buf_len_];
+    memset(kmer_, 0, sizeof(int64_t) * kmer_buf_len_);
+
+    tot_bases_ = 0;
+    gc_bases_ = 0;
+
+    pass_reads_ = 0;
+    fail_short_ = 0;
+    fail_long_ = 0;
+    fail_N_ = 0;
+    fail_lowq_ = 0;
+    trim_adapter_ = 0;
+    trim_adapter_bases_ = 0;
+
+    do_over_represent_analyze_ = cmd_info->do_overrepresentation_;
+    over_representation_sampling_ = cmd_info->overrepresentation_sampling_;
+
+    head_hash_graph_ = NULL;
+    hash_graph_ = NULL;
+    hash_num_ = 0;
+    over_representation_qcnt_ = 0;
+    over_representation_pcnt_ = 0;
+    if (do_over_represent_analyze_) {
+        head_hash_graph_ = new int[(1 << MODB) + 100];
+        bf_zone_ = new int64_t[(1 << MODB) / 64 + 100];
+        for (int i = 0; i < (1 << MODB) + 10; i++) head_hash_graph_[i] = -1;
+        for (int i = 0; i < (1 << MODB) / 64 + 10; i++) bf_zone_[i] = 0;
+        if (is_read2_) {
+            hash_graph_ = new node[cmd_info->hot_seqs2_.size()];
+            for (auto item: cmd_info->hot_seqs2_) {
+                HashInsert(item.c_str(), item.length(), cmd_info->eva_len2_);
+            }
+        } else {
+            hash_graph_ = new node[cmd_info->hot_seqs_.size()];
+            for (auto item: cmd_info->hot_seqs_) {
+                HashInsert(item.c_str(), item.length(), cmd_info->eva_len2_);
+            }
+        }
+    }
+    
+    // Parse the serialized state data
+    int pos = 0;
+    q20bases_ = getInt64(info, pos, info_len);
+    q30bases_ = getInt64(info, pos, info_len);
+    lines_ = getInt64(info, pos, info_len);
+    malloc_seq_len_ = getInt(info, pos, info_len);
+    qul_range_ = getInt(info, pos, info_len);
+    real_seq_len_ = getInt(info, pos, info_len);
+    kmer_buf_len_ = getInt(info, pos, info_len);
+    tot_bases_ = getInt64(info, pos, info_len);
+    gc_bases_ = getInt64(info, pos, info_len);
+    avg_len = getDouble(info, pos, info_len);
+    pass_reads_ = getInt64(info, pos, info_len);
+    fail_short_ = getInt64(info, pos, info_len);
+    fail_long_ = getInt64(info, pos, info_len);
+    fail_N_ = getInt64(info, pos, info_len);
+    fail_lowq_ = getInt64(info, pos, info_len);
+    trim_adapter_ = getInt64(info, pos, info_len);
+    trim_adapter_bases_ = getInt64(info, pos, info_len);
+
+    // pos_qul
+    for(int i = 0; i < real_seq_len_; i++) {
+        pos_qul_[i] = getInt64(info, pos, info_len); 
+    }
+    
+    // len_cnt
+    for(int i = 0; i < real_seq_len_; i++) {
+        len_cnt_[i] = getInt64(info, pos, info_len);
+    }
+    
+    // pos_cnt
+    for(int i = 0; i < real_seq_len_; i++) {
+        for(int j = 0; j < 8; j++) {
+            pos_cnt_[i * 8 + j] = getInt64(info, pos, info_len); 
+        }
+    }
+    
+    // qul_cnt
+    for(int i = 0; i < qul_range_; i++) {
+        qul_cnt_[i] = getInt64(info, pos, info_len);
+    }
+    
+    // gc_cnt
+    for(int i = 0; i < gcMax; i++) {
+        gc_cnt_[i] = getInt64(info, pos, info_len);
+    }
+
+    if(pos != info_len) {
+        fprintf(stderr, "Warning: parsed length %d != info_len %d\n", pos, info_len);
+    }
+}
+#endif
 
 State::~State() {
     delete[] pos_cnt_;
@@ -908,3 +1068,69 @@ string State::list2string(double *list, int size) {
     }
     return ss.str();
 }
+
+#ifdef USE_MPI_IO
+string State::ParseString() {
+    string res = "";
+    res += to_string(q20bases_);
+    res += "@" + to_string(q30bases_);
+    res += "@" + to_string(lines_);
+    res += "@" + to_string(malloc_seq_len_);
+    res += "@" + to_string(qul_range_);
+    res += "@" + to_string(real_seq_len_);
+    res += "@" + to_string(kmer_buf_len_);
+    res += "@" + to_string(tot_bases_);
+    res += "@" + to_string(gc_bases_);
+    res += "@" + to_string(avg_len);
+    res += "@" + to_string(pass_reads_);
+    res += "@" + to_string(fail_short_);
+    res += "@" + to_string(fail_long_);
+    res += "@" + to_string(fail_N_);
+    res += "@" + to_string(fail_lowq_);
+    res += "@" + to_string(trim_adapter_);
+    res += "@" + to_string(trim_adapter_bases_);
+    res += "$";
+    
+    // pos_qul
+    res += to_string(pos_qul_[0]);
+    for(int i = 1; i < real_seq_len_; i++) {
+        res += "@" + to_string(pos_qul_[i]);
+    }
+    res += "$";
+    
+    // len_cnt
+    res += to_string(len_cnt_[0]);
+    for(int i = 1; i < real_seq_len_; i++) {
+        res += "@" + to_string(len_cnt_[i]);
+    }
+    res += "$";
+    
+    // pos_cnt (note: x86 uses 8 elements per position, not 4)
+    res += to_string(pos_cnt_[0]);
+    for(int j = 1; j < 8; j++) {
+        res += "@" + to_string(pos_cnt_[j]);
+    }
+    for(int i = 1; i < real_seq_len_; i++) {
+        for(int j = 0; j < 8; j++) {
+            res += "@" + to_string(pos_cnt_[i * 8 + j]);
+        }
+    }
+    res += "$";
+    
+    // qul_cnt
+    res += to_string(qul_cnt_[0]);
+    for(int i = 1; i < qul_range_; i++) {
+        res += "@" + to_string(qul_cnt_[i]);
+    }
+    res += "$";
+    
+    // gc_cnt
+    res += to_string(gc_cnt_[0]);
+    for(int i = 1; i < gcMax; i++) {
+        res += "@" + to_string(gc_cnt_[i]);
+    }
+    res += "$";
+    
+    return res;
+}
+#endif

@@ -309,9 +309,13 @@ namespace rabbit {
              * @param pool_ Data pool
              * @param fileName2_ the second file name if source file is pair-end sequence
              * @param isZippedNew if true, it will use gzopen to read fileName_ and fileName2_
+             * @param mxLen_ max length
+             * @param start_pos start position in file (for MPI)
+             * @param end_pos end position in file (for MPI)
              */
             FastqFileReader(const std::string &fileName_, FastqDataPool &pool_,
-                            std::string fileName2_ = "", bool isZippedNew = false, uint32 mxLen_ = 1 << 20)
+                            std::string fileName2_ = "", bool isZippedNew = false, uint32 mxLen_ = 1 << 20,
+                            int64_t start_pos = 0, int64_t end_pos = -1)
                 : swapBuffer(SwapBufferSize),
                   swapBuffer2(SwapBufferSize),
                   bufferSize(0),
@@ -320,12 +324,29 @@ namespace rabbit {
                   usesCrlf(false),
                   isZipped(isZippedNew),
                   numParts(0),
-                  recordsPool(pool_) {
+                  recordsPool(pool_)
+#ifdef USE_MPI_IO
+                  ,
+                  file_start_pos_(start_pos),
+                  file_end_pos_(end_pos),
+                  current_file_pos_(start_pos)
+#endif
+            {
                 GetNxtBuffSize = mxLen_;
                 mFqReader = new FileReader(fileName_, isZipped);
                 if (fileName2_ != "") {
                     mFqReader2 = new FileReader(fileName2_, isZipped);
                 }
+#ifdef USE_MPI_IO
+                // Seek to start position if using MPI file range
+                // For PE data, seek both files to the same position
+                if (start_pos > 0 && !isZipped) {
+                    mFqReader->Seek(start_pos);
+                    if (mFqReader2 != NULL) {
+                        mFqReader2->Seek(start_pos);
+                    }
+                }
+#endif
             }
 
             /**
@@ -444,6 +465,13 @@ namespace rabbit {
             void SkipToSol(uchar *data_, uint64 &pos_, const uint64 size_);
 
             void SkipToEol(uchar *data_, uint64 &pos_, const uint64 size_);
+
+#ifdef USE_MPI_IO
+        private:
+            int64_t file_start_pos_;
+            int64_t file_end_pos_;
+            int64_t current_file_pos_;
+#endif
         };
 
     }// namespace fq

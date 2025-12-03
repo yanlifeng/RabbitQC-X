@@ -29,7 +29,11 @@
 
 class SeQc {
 public:
+#ifdef USE_MPI_IO
+    SeQc(CmdInfo *cmd_info, int my_rank, int comm_size);
+#else
     SeQc(CmdInfo *cmd_info);
+#endif
 
     SeQc();
 
@@ -97,6 +101,14 @@ private:
     std::atomic_int careStartWrite;
     moodycamel::ReaderWriterQueue<std::pair<char *, int>> *careQueue;
     std::atomic_int careDone;
+
+#ifdef USE_MPI_IO
+    // MPI related members
+    int my_rank_;
+    int comm_size_;
+    int64_t start_pos_;
+    int64_t end_pos_;
+#endif
 };
 
 
